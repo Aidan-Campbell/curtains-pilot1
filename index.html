@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Curtains Task — Pilot 1</title>
+
+    <!-- jsPsych 7 core + the plugins curtains_task.js uses -->
+    <script src="https://cdn.jsdelivr.net/npm/jspsych@7.3.4/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-keyboard-response@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-button-response@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-instructions@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-likert@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-slider-response@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-html-form@1.0.3/dist/index.browser.min.js"></script>
+    <!-- DataPipe plugin. 0.4.0 is the last version that supports jsPsych 7; it
+         sends to the same DataPipe address as the newest version, and the
+         storage (Dataverse / Google Drive / Zenodo) is chosen in DataPipe. -->
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych-contrib/plugin-pipe@0.4.0/dist/index.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspsych@7.3.4/css/jspsych.css">
+
+    <!-- This task's own stylesheet -->
+    <link rel="stylesheet" href="curtains_task.css">
+
+    <style>
+        /* Minor tweak so the instructions text isn't flush against the edges */
+        .parent { max-width: 640px; margin: 0 auto; text-align: left; }
+
+        /* Consent form and debriefing */
+        .study-doc { max-width: 760px; margin: 0 auto; text-align: left; font-size: 15px; line-height: 1.5; }
+        .study-doc img.letterhead { width: 100%; max-width: 760px; height: auto; margin: 10px 0 18px; }
+        .study-doc h2 { font-size: 17px; text-align: center; margin: 0 0 18px; }
+        .study-doc p { margin: 0 0 12px; }
+        .study-doc ul { margin: 0 0 12px 22px; }
+        .study-doc .consent-statement { font-style: italic; border-top: 1px solid #ccc; padding-top: 14px; margin-top: 18px; }
+        .consent-buttons .jspsych-btn { display: block; width: 100%; max-width: 760px; white-space: normal;
+            text-align: left; margin: 8px auto; padding: 12px 16px; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+<script>
+    /* =====================================================================
+     *   STUDY SETTINGS — fill these in before launching on Prolific
+     * ===================================================================== */
+
+    // From pipe.jspsych.org: create an experiment, connect its storage, turn
+    // on data collection, and copy its 12-character experiment ID here.
+    const DATAPIPE_EXPERIMENT_ID = 'PASTE_DATAPIPE_ID_HERE';
+
+    // From Prolific's study setup (Completion section): the code at the end of
+    // the completion URL, e.g. https://app.prolific.com/submissions/complete?cc=ABC123XY
+    const PROLIFIC_COMPLETION_CODE = 'PASTE_COMPLETION_CODE_HERE';
+
+    const SAVE_ATTEMPTS = 3;       // tries before offering a manual download
+
+    /* ===================================================================== */
+
+    // PILOT 1 — participant page. Condition (1 vs 5 or 2 vs 4 bits) and game
+    // order are assigned at random in curtains_task.js. For testing you can
+    // force them: index.html?pair=1v5&order=highFirst  (pair = 1v5 | 2v4;
+    // order = lowFirst | highFirst). The assignment is printed to the console.
+    //
+    // TEST MODE: while either setting above still says PASTE_, or the link has
+    // no PROLIFIC_PID, nothing is saved and nobody is redirected; the data is
+    // shown on screen at the end instead.
+
+    const savingOn = !DATAPIPE_EXPERIMENT_ID.startsWith('PASTE');
+    const redirectOn = !PROLIFIC_COMPLETION_CODE.startsWith('PASTE');
+
+    // Set to true when the participant consents. Nothing is saved, and nobody
+    // is redirected, for someone who does not consent.
+    let consented = false;
+
+    const jsPsych = initJsPsych({
+        on_finish: function () {
+            if (!consented) return;           // declined: the decline message stays on screen
+            const pid = jsPsych.data.getURLVariable('PROLIFIC_PID');
+            if (redirectOn && pid) {
+                window.location = `https://app.prolific.com/submissions/complete?cc=${PROLIFIC_COMPLETION_CODE}`;
+            } else {
+                jsPsych.data.displayData();   // test mode
+            }
+        }
+    });
+
+    // Prolific adds these to the study link (choose "URL parameters" in Prolific).
+    const PROLIFIC_PID = jsPsych.data.getURLVariable('PROLIFIC_PID') || null;
+    const STUDY_ID     = jsPsych.data.getURLVariable('STUDY_ID') || null;
+    const SESSION_ID   = jsPsych.data.getURLVariable('SESSION_ID') || null;
+    jsPsych.data.addProperties({ prolific_pid: PROLIFIC_PID, study_id: STUDY_ID, session_id: SESSION_ID });
+
+    // One file per participant session. DataPipe won't overwrite an existing file.
+    // The file name holds no Prolific ID (it's only in the prolific_pid column),
+    // so a file listing doesn't expose participant IDs.
+    const DATA_FILENAME = `curtains_pilot1_${SESSION_ID || jsPsych.randomization.randomID(10)}.csv`;
+</script>
+
+<script src="study_documents.js"></script>
+<script src="curtains_task.js"></script>
+
+<script>
+    // If curtains_task.js didn't load (e.g. this page was opened on its own,
+    // outside its folder), say so on screen instead of failing silently.
+    if (typeof curtainsTask === 'undefined') {
+        document.body.innerHTML = `<div class='parent' style="margin-top:60px">
+            <p><b>The game files couldn't be loaded.</b></p>
+            <p>This page needs <code>curtains_task.js</code>, <code>curtains_task.css</code> and the
+            <code>assets</code> folder in the same folder as it. Unzip the whole
+            <code>curtains_pilot1</code> folder and open <code>index.html</code> from there.</p></div>`;
+        throw new Error('curtains_task.js not loaded — open index.html from inside its folder.');
+    }
+
+    // ── Save to DataPipe, retrying if needed ─────────────────────────────
+    // The plugin can report a dropped connection as a success, so success is
+    // judged here: a JSON reply with no error, or "file exists" (an earlier
+    // attempt already got through).
+    let saveAttempt = 0;
+    let saveSucceeded = false;
+
+    const saveOK = (result) => {
+        if (!result || result instanceof Error || typeof result !== 'object') return false;
+        if (!result.error) return true;
+        return String(result.error).includes('FILE_EXISTS');
+    };
+
+    const saveData = {
+        timeline: [{
+            type: jsPsychPipe,
+            action: 'save',
+            experiment_id: DATAPIPE_EXPERIMENT_ID,
+            filename: DATA_FILENAME,
+            data_string: () => jsPsych.data.get().csv(),
+            wait_message: '<p>Saving your data. Please do not close this page.</p>',
+            data: { task: 'curtains', phase: 'save' },
+            on_start: () => { saveAttempt++; },
+            on_finish: (data) => {
+                saveSucceeded = saveOK(data.result);
+                data.save_attempt = saveAttempt;
+                data.saved_ok = saveSucceeded;
+                data.result = JSON.stringify(data.result instanceof Error ? { error: String(data.result) } : data.result);
+            },
+        }],
+        loop_function: () => !saveSucceeded && saveAttempt < SAVE_ATTEMPTS,
+    };
+
+    // Last resort if every attempt failed: let the participant download the file.
+    const saveFailed = {
+        timeline: [{
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `<div class='parent'>
+                <p><b>We couldn't save your data automatically.</b></p>
+                <p>Please click <b>Download my data</b>, then send the downloaded file to us through
+                Prolific's messaging system. You will still be paid for taking part.</p>
+                <p>After downloading, click <b>Continue</b>.</p></div>`,
+            choices: ['Download my data', 'Continue'],
+            data: { task: 'curtains', phase: 'save_failed' },
+            on_load: () => {
+                const btn = document.querySelector('#jspsych-html-button-response-button-0 button');
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();   // download without ending the screen
+                    jsPsych.data.get().localSave('csv', DATA_FILENAME);
+                }, true);
+            },
+        }],
+        conditional_function: () => savingOn && !saveSucceeded,
+    };
+
+    // ── Consent (first screen) and debriefing (last screen) ──────────────
+    // Wording lives in study_documents.js.
+    const DOCS = window.STUDY_DOCUMENTS;
+    const docPage = (title, body, extra = '') => `<div class="study-doc">
+        <img class="letterhead" src="${DOCS.letterhead}" alt="UBC Department of Psychology and Centre for Gambling Research at UBC">
+        <h2>${title}</h2>${body}${extra}</div>`;
+
+    const consent = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: docPage(DOCS.consentTitle, DOCS.consentBody,
+            `<p class="consent-statement">${DOCS.consentStatement}</p>`),
+        choices: [DOCS.consentYes, DOCS.consentNo],
+        button_html: '<button class="jspsych-btn">%choice%</button>',
+        data: { task: 'curtains', phase: 'consent' },
+        on_load: () => {
+            window.scrollTo(0, 0);
+            const btns = jsPsych.getDisplayElement().querySelector('#jspsych-html-button-response-btngroup');
+            if (btns) btns.classList.add('consent-buttons');
+        },
+        on_finish: (data) => {
+            consented = (data.response === 0);
+            data.consent = consented ? 'yes' : 'no';
+            if (!consented) {
+                jsPsych.endExperiment(`<div class="study-doc">${DOCS.declineMessage}</div>`);
+            }
+        },
+    };
+
+    const debrief = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: docPage(DOCS.debriefTitle, DOCS.debriefBody),
+        choices: [redirectOn && PROLIFIC_PID ? 'Finish and return to Prolific' : 'Finish'],
+        data: { task: 'curtains', phase: 'debrief' },
+        on_load: () => window.scrollTo(0, 0),
+    };
+
+    // Save runs before the debriefing, so the data is stored even if someone
+    // closes the page while reading it.
+    const timeline = [
+        consent,
+        ...curtainsTask.fullTimeline,
+        ...(savingOn ? [saveData, saveFailed] : []),
+        debrief,
+    ];
+
+    jsPsych.run(timeline);
+</script>
+
+</body>
+</html>

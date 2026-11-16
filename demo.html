@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Curtains Task — Pilot 1 Demo</title>
+
+    <!-- jsPsych core + the 6 plugins curtains_task.js uses. Loaded from a CDN
+         for this standalone test only — your real experiment likely already
+         loads these locally alongside dmPsych.js, so skip these lines there
+         and load your existing jsPsych files instead. -->
+    <script src="https://cdn.jsdelivr.net/npm/jspsych@7.3.4/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-keyboard-response@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-button-response@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-instructions@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-likert@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-slider-response@1.1.3/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-html-form@1.0.3/dist/index.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspsych@7.3.4/css/jspsych.css">
+
+    <!-- This task's own stylesheet -->
+    <link rel="stylesheet" href="curtains_task.css">
+
+    <style>
+        /* Minor tweak so the instructions text isn't flush against the edges */
+        .parent { max-width: 640px; margin: 0 auto; text-align: left; }
+
+        /* Test-only version picker */
+        .picker { max-width: 560px; margin: 60px auto; font-family: sans-serif; }
+        .picker table { border-collapse: collapse; margin: 16px 0; }
+        .picker td, .picker th { padding: 6px 14px; text-align: left; }
+        .picker a { display: inline-block; padding: 4px 10px; border: 1px solid #999;
+                    border-radius: 4px; text-decoration: none; color: #222; }
+        .picker a:hover { background: #eee; }
+        .picker .note { color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<script>
+    // DEMO: same game, comprehension check switched off, and a picker for the
+    // four groups. Overrides must be set before curtains_task.js loads.
+    window.CURTAINS_OVERRIDES = {
+        includeComprehensionCheck: false,
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const showPicker = !params.has('pair') && !params.has('random');
+
+    if (showPicker) {
+        const link = (pair, order, label) => `<a href="?pair=${pair}&order=${order}">${label}</a>`;
+        document.body.innerHTML = `<div class="picker">
+            <h2>Curtains Pilot 1 demo: choose a group</h2>
+            <table>
+                <tr><th>Condition</th><th colspan="2">Game order</th></tr>
+                <tr><td>1 vs 5 bits</td><td>${link('1v5', 'lowFirst', '1 bit, then 5 bits')}</td>
+                    <td>${link('1v5', 'highFirst', '5 bits, then 1 bit')}</td></tr>
+                <tr><td>2 vs 4 bits</td><td>${link('2v4', 'lowFirst', '2 bits, then 4 bits')}</td>
+                    <td>${link('2v4', 'highFirst', '4 bits, then 2 bits')}</td></tr>
+            </table>
+            <p><a href="?random=1">Random group (as participants get it)</a></p>
+            <p class="note">This demo skips the comprehension questions; otherwise it is the full
+            pilot session (two games of 50 rounds, questionnaires after each, demographics at the end).</p>
+        </div>`;
+    }
+
+    // jsPsych must be initialized BEFORE curtains_task.js loads.
+    const jsPsych = initJsPsych({
+        on_finish: function () {
+            jsPsych.data.displayData();
+        }
+    });
+
+    // Standalone testing only: record Prolific IDs if present in the URL.
+    // In the real experiment, dmPsych.js / exp.js handle IDs, the completion
+    // redirect and data saving.
+    jsPsych.data.addProperties({
+        prolific_pid: jsPsych.data.getURLVariable('PROLIFIC_PID') || null,
+        study_id:     jsPsych.data.getURLVariable('STUDY_ID') || null,
+        session_id:   jsPsych.data.getURLVariable('SESSION_ID') || null,
+    });
+</script>
+
+<script>
+    if (!showPicker) {
+        const s = document.createElement('script');
+        s.src = 'curtains_task.js';
+        s.onload = () => jsPsych.run(curtainsTask.fullTimeline);
+        s.onerror = () => {
+            document.body.innerHTML = `<div class='parent' style="margin-top:60px">
+                <p><b>The game files couldn't be loaded.</b></p>
+                <p>This page needs <code>curtains_task.js</code>, <code>curtains_task.css</code> and the
+                <code>assets</code> folder in the same folder as it. Unzip the whole
+                <code>curtains_pilot1</code> folder and open <code>demo.html</code> from there.</p></div>`;
+        };
+        document.body.appendChild(s);
+    }
+</script>
+
+</body>
+</html>

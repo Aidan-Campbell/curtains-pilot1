@@ -1,0 +1,294 @@
+/**
+ * curtains_task.css — Curtains task, Pilot 1
+ *
+ * Curtains are stacks of <img> layers from assets/:
+ *   closed: feature_purple.png / feature_green.png + feature_dots.png, feature_star.png
+ *   open:   curtain_open_purple.png / curtain_open_green.png + feature_dots_open.png,
+ *           feature_star_open.png
+ * Brackets are absolutely positioned outlines drawn over the grid by the JS.
+ */
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+
+.round-header {
+    text-align: center;
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.score-display {
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 14px;
+}
+
+:root {
+    --curtain-w: 70px;
+    --curtain-h: 105px;
+    --bracket-a: #f08c00;   /* orange: top / left / purple / dots / star */
+    --bracket-b: #1c7ed6;   /* blue:   bottom / right / green / no dots / no star */
+}
+
+/* Stage = grid + bracket layer on top of it */
+.curtain-stage {
+    position: relative;
+    width: fit-content;
+    margin: 10px auto;
+    padding: 8px;          /* room for brackets around edge curtains */
+}
+
+/* Fixed column count per level, set inline (--curtain-cols). Same curtain
+   size at every level so set size isn't confounded with visual salience.
+   The gap is wide enough that two adjacent brackets never overlap. */
+.curtain-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--curtain-cols, 4), var(--curtain-w));
+    gap: 14px;
+}
+
+.bracket-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* ── Curtains ───────────────────────────────────────────────────────────── */
+
+.curtain {
+    position: relative;
+    width: var(--curtain-w);
+    height: var(--curtain-h);
+    transition: opacity 0.4s ease;
+}
+
+.curtain-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.curtain-open {
+    animation: curtain-flip-open 0.5s ease forwards;
+    transform-origin: center;
+}
+
+/* Removed curtains stay open (showing their value) but fade back, so the
+   curtains still in play stand out. Only the artwork fades; the value stays
+   readable. */
+.curtain-removed > img { opacity: 0.45; }
+
+.curtain-eliminated {
+    opacity: 0.15;
+    filter: grayscale(1);
+}
+
+.curtain-final {
+    filter: drop-shadow(0 0 8px gold);
+}
+
+/* perspective() per element so every curtain in a group flips identically */
+@keyframes curtain-flip-open {
+    from { transform: perspective(600px) rotateY(90deg); opacity: 0; }
+    to   { transform: perspective(600px) rotateY(0deg);  opacity: 1; }
+}
+
+.curtain-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-weight: bold;
+    font-size: 16px;
+    text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9);
+    z-index: 5;
+}
+
+.curtain-value-prize   { color: #7be08a; }
+.curtain-value-punish  { color: #ff8a80; }
+
+/* Optional always-on value label (showValueLabels setting) */
+.curtain-label {
+    position: absolute;
+    bottom: -18px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 12px;
+    color: #555;
+}
+
+/* ── Red X on removed curtains ──────────────────────────────────────────── */
+
+/* Pops in over the closed curtain when its group is removed, then stays
+   (a little lighter) after the curtain opens. Sits below the value text
+   (z-index 5) so the value stays readable. */
+.remove-x {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 4;
+    pointer-events: none;
+    animation: remove-x-pop 0.2s ease-out;
+}
+
+.remove-x line {
+    stroke: #e03131;
+    stroke-width: 11;
+    stroke-linecap: round;
+}
+
+/* Once the curtain is open: thinner and lighter, so the value reads first */
+.curtain-removed .remove-x {
+    opacity: 0.5;
+    animation: none;
+}
+.curtain-removed .remove-x line { stroke-width: 6; }
+
+@keyframes remove-x-pop {
+    from { transform: scale(0.4); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+}
+
+/* ── Brackets ───────────────────────────────────────────────────────────── */
+
+.bracket {
+    position: absolute;
+    border: 3px solid;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+.bracket-a { border-color: var(--bracket-a); }
+.bracket-b { border-color: var(--bracket-b); }
+
+.bracket-flash { animation: bracket-flash 0.3s ease-in-out infinite; }
+
+@keyframes bracket-flash {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.2; }
+}
+
+.txt-a { color: var(--bracket-a); font-weight: bold; }
+.txt-b { color: var(--bracket-b); font-weight: bold; }
+
+/* ── Value map (instructions) ───────────────────────────────────────────── */
+
+.value-map {
+    display: grid;
+    grid-template-columns: repeat(var(--map-cols, 4), 44px);
+    gap: 5px;
+    justify-content: center;
+    margin: 14px auto;
+    width: fit-content;
+}
+
+.map-cell {
+    height: 30px;
+    border-radius: 5px;
+    color: #fff;
+    font-weight: bold;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.map-cell-prize  { background: #2e7d32; }
+.map-cell-punish { background: #c62828; }
+
+/* ── Feature key (instructions) ─────────────────────────────────────────── */
+
+.feature-key {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin: 14px 0;
+}
+
+.key-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px 10px 6px;
+    text-align: center;
+    background: #fafafa;
+}
+
+.key-title {
+    font-weight: bold;
+    font-size: 15px;
+    margin-bottom: 6px;
+}
+
+.key-pair {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+}
+
+.key-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.key-curtain {
+    position: relative;
+    width: 56px;
+    height: 84px;
+}
+
+.key-caption {
+    font-size: 13px;
+    margin-top: 4px;
+    white-space: nowrap;
+}
+
+/* Small grid diagram for top/bottom and left/right */
+.mini-map {
+    display: grid;
+    grid-template-columns: repeat(var(--map-cols, 4), 9px);
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+}
+
+.mini-cell {
+    width: 9px;
+    height: 13px;
+    border-radius: 2px;
+    background: #e0e0e0;
+}
+
+.mini-on-A { background: var(--bracket-a); }
+.mini-on-B { background: var(--bracket-b); }
+
+/* ── Questionnaires after each game ──────────────────────────────────────── */
+
+.q-preamble { max-width: 640px; margin: 0 auto 10px; text-align: left; }
+
+/* Likert pages (Melnikoff flow, DQ-GEQ) */
+.jspsych-survey-likert-statement { font-size: 17px; margin-top: 18px; }
+.jspsych-survey-likert-opts { margin-bottom: 22px; }
+.jspsych-survey-likert-opt-label { font-size: 13px; line-height: 1.25; }
+
+/* Slider pages (enjoyment, motivation, Langer & Roth) */
+.parent.slider-q { text-align: center; }
+.slider-context { color: #777; font-size: 14px; margin-bottom: 4px; }
+.slider-text { font-size: 19px; margin: 6px 0 26px; }
+.slider-value { margin-top: 14px; color: #444; }
+
+/* ── Demographics form ─────────────────────────────────────────────────── */
+
+.demo-form { max-width: 640px; margin: 0 auto; text-align: left; }
+.demo-q { border: 1px solid #ddd; border-radius: 8px; padding: 10px 14px 12px; margin: 0 0 14px; }
+.demo-q legend { font-weight: bold; padding: 0 4px; }
+.demo-opt { display: block; margin: 4px 0; cursor: pointer; }
+.demo-text { margin: 4px 0 0 24px; padding: 4px 6px; width: 260px; }
