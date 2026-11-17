@@ -1,0 +1,15 @@
+<!--
+  Curtains Pilot 1 — content of the Qualtrics "Game" question.
+
+  In Qualtrics: add a Text / Graphic question, click its text, choose
+  "Rich Content Editor…" → the "<>" (Source) button, delete everything, and
+  paste the <iframe> line below. Replace YOURNAME (and the repository name, if
+  yours differs) with your GitHub Pages address.
+
+  The ${e://Field/...} parts are Qualtrics piped text: Qualtrics fills them in
+  with the Prolific IDs and the randomly assigned condition, so the game knows
+  who is playing and which condition to run. testrounds is only for your
+  own test runs (add &testrounds=3 to the survey link); for participants it
+  is empty and the game plays all 50 rounds.
+-->
+<iframe id="curtains-frame" src="https://YOURNAME.github.io/curtains-pilot1/index.html?PROLIFIC_PID=${e://Field/PROLIFIC_PID}&amp;STUDY_ID=${e://Field/STUDY_ID}&amp;SESSION_ID=${e://Field/SESSION_ID}&amp;pair=${e://Field/pair}&amp;order=${e://Field/order}&amp;testrounds=${e://Field/testrounds}" style="width:100%;height:600px;border:0;" allow="fullscreen"></iframe>

@@ -1,0 +1,21 @@
+Curtains Pilot 1 — the two ways the Qualtrics survey ends
+==========================================================
+
+1) Participant did NOT consent  (End of Survey element in the "declined" branch)
+
+   Customize → Custom end of survey message → paste:
+
+   You have chosen not to take part in this study. No data from this session
+   has been saved. Please close this page and return the study on Prolific.
+   Returning a study does not affect your approval rating.
+
+   Do NOT redirect this one to Prolific's completion URL.
+
+
+2) Everyone else  (End of Survey element after the debriefing)
+
+   Customize → Redirect to a full URL → paste, with your completion code:
+
+   https://app.prolific.com/submissions/complete?cc=YOUR_COMPLETION_CODE
+
+   (The completion code is shown in Prolific's study setup, under "Completion".)

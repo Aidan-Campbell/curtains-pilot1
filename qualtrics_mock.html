@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Qualtrics stand-in — Curtains Pilot 1</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f4; }
+        #after { display: none; max-width: 900px; margin: 40px auto; background: #fff; padding: 24px 32px; border-radius: 6px; }
+        table { border-collapse: collapse; font-size: 13px; width: 100%; }
+        td, th { border: 1px solid #ddd; padding: 4px 8px; text-align: left; vertical-align: top; word-break: break-all; }
+        button { font-size: 15px; padding: 8px 16px; margin-top: 12px; cursor: pointer; }
+    </style>
+</head>
+<body>
+<!--
+    TESTING ONLY. This page imitates the Qualtrics survey so you can check
+    the hand-over without Qualtrics. It runs the same JavaScript you paste
+    into Qualtrics (qualtrics/question_javascript.js) and, at the end, offers
+    a CSV laid out like a Qualtrics export so you can try make_datasets.py.
+
+    Open it from the same site as the game, e.g.
+    https://YOURNAME.github.io/curtains-pilot1/qualtrics_mock.html
+    or locally through a small web server. Participants never see this page.
+-->
+
+<!-- What the Qualtrics "Game" question contains -->
+<div id="question"></div>
+
+<div id="after">
+    <h2 id="after-title"></h2>
+    <p id="after-text"></p>
+    <table id="fields"></table>
+    <button id="download">Download a Qualtrics-style export (CSV)</button>
+</div>
+
+<script>
+    // Fake IDs, as Prolific would add them, and a random condition, as the
+    // Survey Flow randomizer would set it.
+    const rid = () => Math.random().toString(36).slice(2, 10);
+    const params = new URLSearchParams(location.search);
+    const ED = {
+        PROLIFIC_PID: params.get('PROLIFIC_PID') || 'mock_' + rid(),
+        STUDY_ID: params.get('STUDY_ID') || 'mockstudy',
+        SESSION_ID: params.get('SESSION_ID') || 'mocksess_' + rid(),
+        pair: params.get('pair') || ['1v5', '2v4'][Math.floor(Math.random() * 2)],
+        order: params.get('order') || ['lowFirst', 'highFirst'][Math.floor(Math.random() * 2)],
+        testrounds: params.get('testrounds') || '',
+    };
+    const q = new URLSearchParams({ PROLIFIC_PID: ED.PROLIFIC_PID, STUDY_ID: ED.STUDY_ID,
+        SESSION_ID: ED.SESSION_ID, pair: ED.pair, order: ED.order, testrounds: ED.testrounds });
+    document.getElementById('question').innerHTML =
+        `<iframe id="curtains-frame" src="index.html?${q}" style="width:100%;height:85vh;border:0"></iframe>`;
+
+    // A minimal imitation of Qualtrics' JavaScript API.
+    window.CURTAINS_GAME_ORIGIN_OVERRIDE = location.origin;
+    const onload = [], onready = [];
+    const questionApi = {
+        hideNextButton() {}, hidePreviousButton() {},
+        clickNextButton() { showAfter(); },
+    };
+    window.Qualtrics = { SurveyEngine: {
+        addOnload: (f) => onload.push(f),
+        addOnReady: (f) => onready.push(f),
+        setEmbeddedData: (k, v) => { ED[k] = v; },
+    } };
+
+    function showAfter() {
+        document.getElementById('question').remove();
+        const declined = ED.curtains_consent === 'no';
+        document.getElementById('after').style.display = 'block';
+        document.getElementById('after-title').textContent = declined
+            ? 'Qualtrics would now show the "did not consent" end message (no redirect).'
+            : 'Qualtrics would now show the debriefing page, then redirect to Prolific.';
+        document.getElementById('after-text').textContent =
+            'Embedded data stored for this response:';
+        document.getElementById('fields').innerHTML = Object.entries(ED).map(([k, v]) =>
+            `<tr><th>${k}</th><td>${String(v).length > 120 ? String(v).slice(0, 120) + '… (' + String(v).length + ' chars)' : v}</td></tr>`
+        ).join('');
+    }
+
+    document.getElementById('download').onclick = () => {
+        const cols = ['StartDate', 'EndDate', 'Status', 'Progress', 'Finished', 'ResponseId', ...Object.keys(ED)];
+        const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        const vals = { StartDate: now, EndDate: now, Status: 'IP Address', Progress: '100', Finished: 'True',
+                       ResponseId: 'R_mock' + rid(), ...ED };
+        const esc = (s) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+        const lines = [
+            cols.map(esc).join(','),
+            cols.map(esc).join(','),                                   // Qualtrics' 2nd header row
+            cols.map(c => esc(JSON.stringify({ ImportId: c }))).join(','), // and 3rd
+            cols.map(c => esc(vals[c])).join(','),
+        ];
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+        a.download = 'qualtrics_mock_export.csv';
+        a.click();
+    };
+</script>
+<script src="qualtrics/question_javascript.js"></script>
+<script>
+    onload.forEach(f => f.call(questionApi));
+    onready.forEach(f => f.call(questionApi));
+</script>
+</body>
+</html>

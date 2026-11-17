@@ -12,10 +12,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-likert@1.1.3/dist/index.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-slider-response@1.1.3/dist/index.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-html-form@1.0.3/dist/index.browser.min.js"></script>
-    <!-- DataPipe plugin. 0.4.0 is the last version that supports jsPsych 7; it
-         sends to the same DataPipe address as the newest version, and the
-         storage (Dataverse / Google Drive / Zenodo) is chosen in DataPipe. -->
-    <script src="https://cdn.jsdelivr.net/npm/@jspsych-contrib/plugin-pipe@0.4.0/dist/index.browser.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspsych@7.3.4/css/jspsych.css">
 
     <!-- This task's own stylesheet -->
@@ -25,76 +21,91 @@
         /* Minor tweak so the instructions text isn't flush against the edges */
         .parent { max-width: 640px; margin: 0 auto; text-align: left; }
 
-        /* Consent form and debriefing */
+        /* Consent form */
         .study-doc { max-width: 760px; margin: 0 auto; text-align: left; font-size: 15px; line-height: 1.5; }
         .study-doc img.letterhead { width: 100%; max-width: 760px; height: auto; margin: 10px 0 18px; }
         .study-doc h2 { font-size: 17px; text-align: center; margin: 0 0 18px; }
         .study-doc p { margin: 0 0 12px; }
         .study-doc ul { margin: 0 0 12px 22px; }
         .study-doc .consent-statement { font-style: italic; border-top: 1px solid #ccc; padding-top: 14px; margin-top: 18px; }
-        .consent-buttons .jspsych-btn { display: block; width: 100%; max-width: 760px; white-space: normal;
-            text-align: left; margin: 8px auto; padding: 12px 16px; line-height: 1.4; }
+        .study-doc .jspsych-btn { white-space: normal; max-width: 760px; line-height: 1.4; }
     </style>
 </head>
 <body>
 
 <script>
     /* =====================================================================
-     *   STUDY SETTINGS — fill these in before launching on Prolific
+     *   STUDY SETTINGS
      * ===================================================================== */
 
-    // From pipe.jspsych.org: create an experiment, connect its storage, turn
-    // on data collection, and copy its 12-character experiment ID here.
-    const DATAPIPE_EXPERIMENT_ID = 'PASTE_DATAPIPE_ID_HERE';
+    // The address your Qualtrics survey runs on: the start of the survey link,
+    // up to and including ".com" (no slash, no path). UBC Survey Tool links
+    // start with https://ubc.ca1.qualtrics.com — check yours and change this
+    // if it differs.
+    const QUALTRICS_ORIGIN = 'https://ubc.ca1.qualtrics.com';
 
-    // From Prolific's study setup (Completion section): the code at the end of
-    // the completion URL, e.g. https://app.prolific.com/submissions/complete?cc=ABC123XY
-    const PROLIFIC_COMPLETION_CODE = 'PASTE_COMPLETION_CODE_HERE';
+    // Size of each data piece sent to Qualtrics. Qualtrics' newer survey
+    // layout rejects embedded-data values over 1,000 characters, so stay below.
+    const CHUNK_SIZE = 950;
 
-    const SAVE_ATTEMPTS = 3;       // tries before offering a manual download
+    // How long to wait for Qualtrics to confirm it stored the data before
+    // offering the participant a manual download instead.
+    const HANDOVER_TIMEOUT_MS = 15000;
 
     /* ===================================================================== */
 
-    // PILOT 1 — participant page. Condition (1 vs 5 or 2 vs 4 bits) and game
-    // order are assigned at random in curtains_task.js. For testing you can
-    // force them: index.html?pair=1v5&order=highFirst  (pair = 1v5 | 2v4;
-    // order = lowFirst | highFirst). The assignment is printed to the console.
+    // HOW THIS PAGE RUNS
+    //   Inside the Qualtrics survey (the normal case): Qualtrics shows this page
+    //   in a frame. At the end, the data is handed to the survey page, which
+    //   stores it and moves on to the debriefing. This page saves nothing itself.
+    //   On its own (opened directly, for testing): nothing is saved anywhere;
+    //   the data is shown on screen at the end.
+    //   qualtrics_mock.html imitates the survey page so the handover can be
+    //   tested without Qualtrics.
     //
-    // TEST MODE: while either setting above still says PASTE_, or the link has
-    // no PROLIFIC_PID, nothing is saved and nobody is redirected; the data is
-    // shown on screen at the end instead.
+    // Condition (1 vs 5 or 2 vs 4 bits) and game order come from the link when
+    // Qualtrics passes them (?pair=1v5&order=highFirst); otherwise they are
+    // assigned at random. The assignment is printed to the console.
 
-    const savingOn = !DATAPIPE_EXPERIMENT_ID.startsWith('PASTE');
-    const redirectOn = !PROLIFIC_COMPLETION_CODE.startsWith('PASTE');
+    const EMBEDDED = (window.parent !== window);
+    const HOST_ORIGINS = [QUALTRICS_ORIGIN, window.location.origin];
 
-    // Set to true when the participant consents. Nothing is saved, and nobody
-    // is redirected, for someone who does not consent.
+    // Set to true when the participant consents.
     let consented = false;
 
     const jsPsych = initJsPsych({
         on_finish: function () {
-            if (!consented) return;           // declined: the decline message stays on screen
-            const pid = jsPsych.data.getURLVariable('PROLIFIC_PID');
-            if (redirectOn && pid) {
-                window.location = `https://app.prolific.com/submissions/complete?cc=${PROLIFIC_COMPLETION_CODE}`;
-            } else {
-                jsPsych.data.displayData();   // test mode
-            }
+            if (!consented || EMBEDDED) return;   // in Qualtrics, the survey takes over
+            jsPsych.data.displayData();           // test mode
         }
     });
 
-    // Prolific adds these to the study link (choose "URL parameters" in Prolific).
+    // Prolific's IDs arrive through Qualtrics (or the test link).
     const PROLIFIC_PID = jsPsych.data.getURLVariable('PROLIFIC_PID') || null;
     const STUDY_ID     = jsPsych.data.getURLVariable('STUDY_ID') || null;
     const SESSION_ID   = jsPsych.data.getURLVariable('SESSION_ID') || null;
     jsPsych.data.addProperties({ prolific_pid: PROLIFIC_PID, study_id: STUDY_ID, session_id: SESSION_ID });
 
-    // One file per participant session. DataPipe won't overwrite an existing file.
-    // The file name holds no Prolific ID (it's only in the prolific_pid column),
-    // so a file listing doesn't expose participant IDs.
-    const DATA_FILENAME = `curtains_pilot1_${SESSION_ID || jsPsych.randomization.randomID(10)}.csv`;
+    // Send a message to the Qualtrics page. postMessage only delivers to a
+    // window whose address matches, so the data can't go anywhere else.
+    function tellHost(msg) {
+        if (!EMBEDDED) return;
+        for (const origin of HOST_ORIGINS) {
+            try { window.parent.postMessage(Object.assign({ source: 'curtains' }, msg), origin); } catch (e) { /* ignore */ }
+        }
+    }
 </script>
 
+<script>
+    // TESTING ONLY: add &testrounds=3 to the survey link (or this page's link)
+    // to play 3 rounds per game instead of 50. Such runs are marked as tests
+    // in the data, and make_datasets.py flags them.
+    const TEST_ROUNDS = parseInt(new URLSearchParams(location.search).get('testrounds'), 10) || null;
+    if (TEST_ROUNDS > 0) {
+        window.CURTAINS_OVERRIDES = Object.assign({}, window.CURTAINS_OVERRIDES, { nRoundsPerGame: TEST_ROUNDS });
+        console.log(`[curtains] TEST RUN: ${TEST_ROUNDS} rounds per game`);
+    }
+</script>
 <script src="study_documents.js"></script>
 <script src="curtains_task.js"></script>
 
@@ -104,110 +115,203 @@
     if (typeof curtainsTask === 'undefined') {
         document.body.innerHTML = `<div class='parent' style="margin-top:60px">
             <p><b>The game files couldn't be loaded.</b></p>
-            <p>This page needs <code>curtains_task.js</code>, <code>curtains_task.css</code> and the
-            <code>assets</code> folder in the same folder as it. Unzip the whole
-            <code>curtains_pilot1</code> folder and open <code>index.html</code> from there.</p></div>`;
+            <p>This page needs <code>curtains_task.js</code>, <code>curtains_task.css</code>,
+            <code>study_documents.js</code> and the <code>assets</code> folder in the same folder as it.</p></div>`;
         throw new Error('curtains_task.js not loaded — open index.html from inside its folder.');
     }
 
-    // ── Save to DataPipe, retrying if needed ─────────────────────────────
-    // The plugin can report a dropped connection as a success, so success is
-    // judged here: a JSON reply with no error, or "file exists" (an earlier
-    // attempt already got through).
-    let saveAttempt = 0;
-    let saveSucceeded = false;
+    /* ── Packing the data for Qualtrics ───────────────────────────────────
+     * The raw jsPsych data repeats screen HTML on every row (~30 KB per round),
+     * far more than Qualtrics can hold. This keeps everything needed for
+     * analysis, in a compact form that make_datasets.py turns back into tables.
+     * Removal steps and curtain features are left out: both follow from the
+     * curtain left (pos) and the removal order (ord).
+     */
+    const DIM_CODES = { color: 'c', topbottom: 't', leftright: 'l', dots: 'd', star: 's' };
+    const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(v)) ? null : v;
+    const b01 = (v) => (v === true ? 1 : v === false ? 0 : null);
+    const parseMaybe = (v) => { if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch (e) { return v; } };
 
-    const saveOK = (result) => {
-        if (!result || result instanceof Error || typeof result !== 'object') return false;
-        if (!result.error) return true;
-        return String(result.error).includes('FILE_EXISTS');
+    function packData() {
+        const rows = jsPsych.data.get().values();
+        const first = rows[0] || {};
+        const byPhase = (p) => rows.filter(r => r.phase === p);
+        const last = rows[rows.length - 1] || {};
+
+        const consentRow = byPhase('consent')[0] || {};
+        const p = {
+            v: 'pilot1-qualtrics-1',
+            session_id: first.session_id, study_id: first.study_id,
+            condition: first.pilot_condition, order: first.pilot_order,
+            bits_sequence: parseMaybe(first.pilot_bits_sequence),
+            condition_source: first.pilot_condition_source, order_source: first.pilot_order_source,
+            consent_rt: num(consentRow.rt),
+            total_ms: num(last.time_elapsed),
+            user_agent: navigator.userAgent.slice(0, 160),
+            screen: `${window.screen.width}x${window.screen.height}`,
+            test_rounds: TEST_ROUNDS,
+        };
+
+        const comp = byPhase('comprehension').map(r => [r.question, num(r.response), b01(r.correct), num(r.rt)]);
+        const instr = byPhase('instructions').map(r => [num(r.game), num(r.rt)]);
+
+        const tcols = ['game', 'type', 'round', 'bits', 'outcome', 'cum_score', 'start_rt',
+                       'click_x', 'click_y', 'click_btn_x', 'click_btn_y', 'trusted', 'keyboard', 'pointer',
+                       'curtain_pos', 'removal_order', 'reveal_ms', 'time_ms'];
+        const t = byPhase('reveal').map(r => [
+            num(r.game), r.round_type === 'practice' ? 'p' : 'm', num(r.round), num(r.n_bits),
+            num(r.outcome), num(r.cumulative_score), num(r.start_rt),
+            num(r.click_x), num(r.click_y), num(r.click_button_x), num(r.click_button_y),
+            b01(r.click_trusted), b01(r.click_keyboard), r.click_pointer || null,
+            num(r.curtain_position),
+            (parseMaybe(r.removal_order) || []).map(d => DIM_CODES[d] || d).join(''),
+            num(r.reveal_duration_ms), num(r.time_elapsed),
+        ]);
+
+        // Questionnaires, long format: one entry per item.
+        const qcols = ['game', 'bits', 'scale', 'item', 'value', 'page_rt'];
+        const q = [];
+        const itemKeys = (r) => Object.keys(r).filter(k =>
+            /^(flow_|dqgeq_\d|enjoyment$|continue_desire$|lr_)/.test(k) && r[k] !== null && r[k] !== undefined && r[k] !== '');
+        for (const r of byPhase('questionnaire')) {
+            for (const k of itemKeys(r)) q.push([num(r.game), num(r.n_bits), r.scale || null, k, num(r[k]), num(r.rt)]);
+            if (r.actual_wins !== undefined && r.actual_wins !== null && r.actual_wins !== '')
+                q.push([num(r.game), num(r.n_bits), 'actual', 'actual_wins', num(r.actual_wins), null]);
+        }
+
+        const d = byPhase('demographics')[0] || {};
+        const demo = {
+            age: d.demo_age ?? null, gender: d.demo_gender ?? null, culture: parseMaybe(d.demo_culture) ?? null,
+            culture_other: d.demo_culture_other ?? null, education: d.demo_education ?? null,
+            employment: d.demo_employment ?? null, marital: d.demo_marital ?? null, rt: num(d.rt),
+        };
+
+        const e = byPhase('end')[0] || {};
+        const end = {
+            final_score: num(e.final_score), bonus_pence: num(e.final_bonus_subunits),
+            clicks_n: num(e.clicks_n), clicks_with_position: num(e.clicks_with_position),
+            clicks_unique_positions: num(e.clicks_unique_positions), clicks_max_same_position: num(e.clicks_max_same_position),
+            clicks_prop_same_position: num(e.clicks_prop_same_position),
+            clicks_untrusted: num(e.clicks_untrusted), clicks_keyboard: num(e.clicks_keyboard),
+        };
+
+        return { p, comp, instr, tcols, t, qcols, q, demo, end };
+    }
+
+    function chunk(str, size) {
+        const out = [];
+        for (let i = 0; i < str.length; i += size) out.push(str.slice(i, i + size));
+        return out;
+    }
+
+    let packed = null, chunks = [], handedOver = false;
+
+    // Hand the data to the Qualtrics page and wait for it to confirm.
+    const handover = {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: `<div class='parent'><p>Saving your responses. Please do not close this page.</p></div>`,
+        choices: 'NO_KEYS',
+        data: { task: 'curtains', phase: 'handover' },
+        on_load: () => {
+            packed = packData();
+            chunks = chunk(JSON.stringify(packed), CHUNK_SIZE);
+            console.log(`[curtains] packed data: ${chunks.join('').length} characters in ${chunks.length} pieces`);
+            if (!EMBEDDED) { jsPsych.finishTrial({ handover: 'test_mode', n_chunks: chunks.length }); return; }
+
+            let finished = false;
+            const finish = (result) => {
+                if (finished) return;
+                finished = true;
+                window.removeEventListener('message', onMsg);
+                jsPsych.finishTrial({ handover: result, n_chunks: chunks.length });
+            };
+            const onMsg = (ev) => {
+                if (!HOST_ORIGINS.includes(ev.origin)) return;
+                const m = ev.data || {};
+                if (m.source === 'curtains-host' && m.type === 'ack') { handedOver = true; finish('ok'); }
+            };
+            window.addEventListener('message', onMsg);
+            tellHost({
+                type: 'data', chunks,
+                bonus_pence: packed.end.bonus_pence, condition: packed.p.condition, order: packed.p.order,
+                session_id: packed.p.session_id,
+            });
+            setTimeout(() => finish('timeout'), HANDOVER_TIMEOUT_MS);
+        },
     };
 
-    const saveData = {
-        timeline: [{
-            type: jsPsychPipe,
-            action: 'save',
-            experiment_id: DATAPIPE_EXPERIMENT_ID,
-            filename: DATA_FILENAME,
-            data_string: () => jsPsych.data.get().csv(),
-            wait_message: '<p>Saving your data. Please do not close this page.</p>',
-            data: { task: 'curtains', phase: 'save' },
-            on_start: () => { saveAttempt++; },
-            on_finish: (data) => {
-                saveSucceeded = saveOK(data.result);
-                data.save_attempt = saveAttempt;
-                data.saved_ok = saveSucceeded;
-                data.result = JSON.stringify(data.result instanceof Error ? { error: String(data.result) } : data.result);
-            },
-        }],
-        loop_function: () => !saveSucceeded && saveAttempt < SAVE_ATTEMPTS,
-    };
-
-    // Last resort if every attempt failed: let the participant download the file.
-    const saveFailed = {
+    // If Qualtrics never confirmed: let the participant download the data,
+    // then tell Qualtrics to move on so they still reach the debrief and payment.
+    const handoverFailed = {
         timeline: [{
             type: jsPsychHtmlButtonResponse,
             stimulus: `<div class='parent'>
-                <p><b>We couldn't save your data automatically.</b></p>
+                <p><b>We couldn't save your responses automatically.</b></p>
                 <p>Please click <b>Download my data</b>, then send the downloaded file to us through
                 Prolific's messaging system. You will still be paid for taking part.</p>
                 <p>After downloading, click <b>Continue</b>.</p></div>`,
             choices: ['Download my data', 'Continue'],
-            data: { task: 'curtains', phase: 'save_failed' },
+            data: { task: 'curtains', phase: 'handover_failed' },
             on_load: () => {
                 const btn = document.querySelector('#jspsych-html-button-response-button-0 button');
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();   // download without ending the screen
-                    jsPsych.data.get().localSave('csv', DATA_FILENAME);
+                    const blob = new Blob([JSON.stringify(packed)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `curtains_pilot1_${SESSION_ID || 'nosession'}.json`;
+                    document.body.appendChild(a); a.click(); a.remove();
                 }, true);
             },
+            on_finish: () => tellHost({ type: 'failed' }),
         }],
-        conditional_function: () => savingOn && !saveSucceeded,
+        conditional_function: () => EMBEDDED && !handedOver,
     };
 
-    // ── Consent (first screen) and debriefing (last screen) ──────────────
-    // Wording lives in study_documents.js.
-    const DOCS = window.STUDY_DOCUMENTS;
-    const docPage = (title, body, extra = '') => `<div class="study-doc">
-        <img class="letterhead" src="${DOCS.letterhead}" alt="UBC Department of Psychology and Centre for Gambling Research at UBC">
-        <h2>${title}</h2>${body}${extra}</div>`;
+    // Shown while Qualtrics moves to the debriefing page. If Qualtrics never
+    // answered (e.g. a wrong address setting), it may not move on, so the
+    // participant is told what to do.
+    const waitForNextPage = {
+        timeline: [{
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: () => handedOver
+                ? `<div class='parent'><p>Your responses are saved. The next page is loading…</p></div>`
+                : `<div class='parent'><p>Thank you. The next page should load in a few seconds.</p>
+                   <p>If it doesn't, please return to Prolific and send us a message (with the file you
+                   downloaded, if you have it). We will make sure you are paid for your time.</p></div>`,
+            choices: 'NO_KEYS',
+            data: { task: 'curtains', phase: 'handed_over' },
+        }],
+        conditional_function: () => EMBEDDED,
+    };
 
+    // ── Consent (first screen). Wording lives in study_documents.js. ──────
+    const DOCS = window.STUDY_DOCUMENTS;
     const consent = {
         type: jsPsychHtmlButtonResponse,
-        stimulus: docPage(DOCS.consentTitle, DOCS.consentBody,
-            `<p class="consent-statement">${DOCS.consentStatement}</p>`),
+        stimulus: `<div class="study-doc">
+            <img class="letterhead" src="${DOCS.letterhead}" alt="UBC Department of Psychology and Centre for Gambling Research at UBC">
+            <h2>${DOCS.consentTitle}</h2>${DOCS.consentBody}
+            <p class="consent-statement">${DOCS.consentStatement}</p></div>`,
         choices: [DOCS.consentYes, DOCS.consentNo],
-        button_html: '<button class="jspsych-btn">%choice%</button>',
         data: { task: 'curtains', phase: 'consent' },
-        on_load: () => {
-            window.scrollTo(0, 0);
-            const btns = jsPsych.getDisplayElement().querySelector('#jspsych-html-button-response-btngroup');
-            if (btns) btns.classList.add('consent-buttons');
-        },
+        on_load: () => window.scrollTo(0, 0),
         on_finish: (data) => {
             consented = (data.response === 0);
             data.consent = consented ? 'yes' : 'no';
             if (!consented) {
+                tellHost({ type: 'declined' });
                 jsPsych.endExperiment(`<div class="study-doc">${DOCS.declineMessage}</div>`);
             }
         },
     };
 
-    const debrief = {
-        type: jsPsychHtmlButtonResponse,
-        stimulus: docPage(DOCS.debriefTitle, DOCS.debriefBody),
-        choices: [redirectOn && PROLIFIC_PID ? 'Finish and return to Prolific' : 'Finish'],
-        data: { task: 'curtains', phase: 'debrief' },
-        on_load: () => window.scrollTo(0, 0),
-    };
-
-    // Save runs before the debriefing, so the data is stored even if someone
-    // closes the page while reading it.
     const timeline = [
         consent,
         ...curtainsTask.fullTimeline,
-        ...(savingOn ? [saveData, saveFailed] : []),
-        debrief,
+        handover,
+        handoverFailed,
+        waitForNextPage,
     ];
 
     jsPsych.run(timeline);
