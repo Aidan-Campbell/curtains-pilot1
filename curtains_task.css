@@ -286,3 +286,12 @@
 .demo-q legend { font-weight: bold; padding: 0 4px; }
 .demo-opt { display: block; margin: 4px 0; cursor: pointer; }
 .demo-text { margin: 4px 0 0 24px; padding: 4px 6px; width: 260px; }
+
+/* While a curtain is over a card, the card is hidden completely, so no colour
+   shows around the curtain's edges. No coloured outline on the cards. */
+.value-prize  { background: #e2f1e4; border-color: transparent; }
+.value-punish { background: #fce6e8; border-color: transparent; }
+.covered .curtain:not(.gone) .value-card {
+    visibility: hidden;
+    transition: visibility 0s linear 0.5s;
+}
