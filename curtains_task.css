@@ -1,41 +1,123 @@
 /**
  * curtains_task.css — Curtains task, Pilot 1
  *
- * Curtains are stacks of <img> layers from assets/:
- *   closed: feature_purple.png / feature_green.png + feature_dots.png, feature_star.png
- *   open:   curtain_open_purple.png / curtain_open_green.png + feature_dots_open.png,
- *           feature_star_open.png
+ * Each grid cell = a value card (the points) with a curtain cover on top.
+ * Covers are stacks of <img> layers from assets/: feature_purple.png /
+ * feature_green.png + feature_dots.png, feature_star.png.
  * Brackets are absolutely positioned outlines drawn over the grid by the JS.
+ * Sizes are CSS variables so the instruction demos can use a smaller board
+ * (.demo-size) with the same code.
  */
-
-/* ── Layout ─────────────────────────────────────────────────────────────── */
-
-.round-header {
-    text-align: center;
-    font-size: 16px;
-    color: #666;
-    margin-bottom: 4px;
-}
-
-.score-display {
-    text-align: center;
-    font-size: 18px;
-    font-weight: bold;
-    margin-bottom: 14px;
-}
 
 :root {
     --curtain-w: 70px;
     --curtain-h: 105px;
+    --grid-gap: 14px;
+    --value-fs: 26px;       /* points on the cards */
+    --reel-h: 44px;         /* scoreboard digits */
+    --reel-w: 30px;
+    --reel-fs: 32px;
     --bracket-a: #f08c00;   /* orange: top / left / purple / dots / star */
     --bracket-b: #1c7ed6;   /* blue:   bottom / right / green / no dots / no star */
 }
+
+.demo-size {
+    --curtain-w: 52px;
+    --curtain-h: 78px;
+    --grid-gap: 10px;
+    --value-fs: 19px;
+    --reel-h: 34px;
+    --reel-w: 24px;
+    --reel-fs: 25px;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+
+.cg-wrap { position: relative; }   /* the flying points are placed inside this */
+
+.round-header {
+    text-align: center;
+    font-size: 15px;
+    color: #666;
+    margin-bottom: 6px;
+}
+
+/* ── Scoreboard ─────────────────────────────────────────────────────────── */
+
+.scoreboard {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    width: fit-content;
+    margin: 0 auto 8px;
+    padding: 6px 16px;
+    background: #1d2333;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 2px #c9a227, 0 3px 8px rgba(0, 0, 0, 0.25);
+    color: #fff;
+}
+
+.sb-label {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #c9d1e0;
+}
+.sb-practice .sb-label { text-transform: none; letter-spacing: 0; color: #ffd36b; }
+
+.sb-meter { display: flex; align-items: center; gap: 3px; }
+
+.sb-sign,
+.reel-strip span {
+    font-family: ui-monospace, Menlo, Consolas, "Courier New", monospace;
+    font-weight: bold;
+    font-size: var(--reel-fs);
+    line-height: var(--reel-h);
+}
+.sb-sign { width: calc(var(--reel-w) * 0.8); text-align: center; }
+
+.reel {
+    display: inline-block;
+    width: var(--reel-w);
+    height: var(--reel-h);
+    overflow: hidden;
+    border-radius: 5px;
+    background: linear-gradient(#0b0e16, #2a3247 50%, #0b0e16);
+}
+.reel-strip { display: flex; flex-direction: column; }
+.reel-strip span { height: var(--reel-h); text-align: center; color: #fff; }
+.reel.lead .reel-strip span { color: rgba(255, 255, 255, 0.22); }   /* leading zeros */
+
+.sb-bonus { font-size: 15px; color: #c9d1e0; }
+.sb-bonus b { font-size: 18px; color: #ffd36b; }
+
+.sb-bump { animation: sb-bump 0.5s ease-out; }
+@keyframes sb-bump {
+    0%, 100% { transform: scale(1); }
+    30%      { transform: scale(1.06); }
+}
+
+/* Points flying from the last card to the scoreboard */
+.score-float {
+    position: absolute;
+    z-index: 30;
+    pointer-events: none;
+    white-space: nowrap;
+    font-weight: 800;
+    font-size: calc(var(--value-fs) * 1.4);
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.float-prize  { color: #1e9e3a; }
+.float-punish { color: #d32f2f; }
+
+/* ── Board ──────────────────────────────────────────────────────────────── */
 
 /* Stage = grid + bracket layer on top of it */
 .curtain-stage {
     position: relative;
     width: fit-content;
-    margin: 10px auto;
+    margin: 6px auto;
     padding: 8px;          /* room for brackets around edge curtains */
 }
 
@@ -45,7 +127,7 @@
 .curtain-grid {
     display: grid;
     grid-template-columns: repeat(var(--curtain-cols, 4), var(--curtain-w));
-    gap: 14px;
+    gap: var(--grid-gap);
 }
 
 .bracket-layer {
@@ -54,13 +136,57 @@
     pointer-events: none;
 }
 
-/* ── Curtains ───────────────────────────────────────────────────────────── */
-
 .curtain {
     position: relative;
     width: var(--curtain-w);
     height: var(--curtain-h);
-    transition: opacity 0.4s ease;
+}
+
+/* The points */
+.value-card {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border: 2px solid;
+    border-radius: 10px;
+    transition: opacity 0.5s ease, filter 0.5s ease;
+}
+.value-prize  { background: #e8f5e9; border-color: #43a047; color: #1b5e20; }
+.value-punish { background: #ffebee; border-color: #e53935; color: #b71c1c; }
+.value-num {
+    font-weight: 800;
+    font-size: var(--value-fs);
+    transition: opacity 0.15s ease;
+}
+
+/* Empty board (Start screen): slots only */
+.values-hidden .value-card { background: #f1f1f1; border-color: #d4d4d4; border-style: dashed; }
+.values-hidden .value-num  { opacity: 0; }
+
+/* Curtain covers: hidden until the grid is 'covered'; 'fly' plays the fly-in.
+   The fade-out time must match removeFade_ms in the JS. */
+.cover {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease;
+}
+.covered .cover { opacity: 1; visibility: visible; }
+.covered.fly .cover {
+    transform-origin: top center;
+    animation: cover-fly-in 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);   /* = flyIn_ms */
+}
+.covered .gone .cover { opacity: 0; }
+
+@keyframes cover-fly-in {
+    from { transform: translateY(-70%) scaleY(0.3); opacity: 0; }
+    to   { transform: none; opacity: 1; }
 }
 
 .curtain-layer {
@@ -71,61 +197,25 @@
     height: 100%;
 }
 
-.curtain-open {
-    animation: curtain-flip-open 0.5s ease forwards;
-    transform-origin: center;
+/* Removed: curtain gone, points stay readable but dimmed */
+.removed .value-card { opacity: 0.5; filter: grayscale(0.4); }
+
+/* The last curtain: its points are highlighted */
+.final .value-card {
+    z-index: 3;
+    box-shadow: 0 0 0 3px #f5c518, 0 0 16px 6px rgba(245, 197, 24, 0.75);
+    animation: final-pop 0.6s ease-out 0.45s both;
 }
-
-/* Removed curtains stay open (showing their value) but fade back, so the
-   curtains still in play stand out. Only the artwork fades; the value stays
-   readable. */
-.curtain-removed > img { opacity: 0.45; }
-
-.curtain-eliminated {
-    opacity: 0.15;
-    filter: grayscale(1);
-}
-
-.curtain-final {
-    filter: drop-shadow(0 0 8px gold);
-}
-
-/* perspective() per element so every curtain in a group flips identically */
-@keyframes curtain-flip-open {
-    from { transform: perspective(600px) rotateY(90deg); opacity: 0; }
-    to   { transform: perspective(600px) rotateY(0deg);  opacity: 1; }
-}
-
-.curtain-value {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-weight: bold;
-    font-size: 16px;
-    text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9);
-    z-index: 5;
-}
-
-.curtain-value-prize   { color: #7be08a; }
-.curtain-value-punish  { color: #ff8a80; }
-
-/* Optional always-on value label (showValueLabels setting) */
-.curtain-label {
-    position: absolute;
-    bottom: -18px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 12px;
-    color: #555;
+@keyframes final-pop {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.2); }
+    100% { transform: scale(1.08); }
 }
 
 /* ── Red X on removed curtains ──────────────────────────────────────────── */
 
-/* Pops in over the closed curtain when its group is removed, then stays
-   (a little lighter) after the curtain opens. Sits below the value text
-   (z-index 5) so the value stays readable. */
+/* Pops in over the curtain when its group is removed, then stays (thinner and
+   lighter) over the dimmed points. */
 .remove-x {
     position: absolute;
     inset: 0;
@@ -140,14 +230,11 @@
     stroke: #e03131;
     stroke-width: 11;
     stroke-linecap: round;
+    transition: stroke-width 0.5s ease;
 }
 
-/* Once the curtain is open: thinner and lighter, so the value reads first */
-.curtain-removed .remove-x {
-    opacity: 0.5;
-    animation: none;
-}
-.curtain-removed .remove-x line { stroke-width: 6; }
+.removed .remove-x { opacity: 0.35; animation: none; transition: opacity 0.5s ease; }
+.removed .remove-x line { stroke-width: 5; }
 
 @keyframes remove-x-pop {
     from { transform: scale(0.4); opacity: 0; }
@@ -173,102 +260,9 @@
     50%      { opacity: 0.2; }
 }
 
-.txt-a { color: var(--bracket-a); font-weight: bold; }
-.txt-b { color: var(--bracket-b); font-weight: bold; }
+/* ── Instruction demos ──────────────────────────────────────────────────── */
 
-/* ── Value map (instructions) ───────────────────────────────────────────── */
-
-.value-map {
-    display: grid;
-    grid-template-columns: repeat(var(--map-cols, 4), 44px);
-    gap: 5px;
-    justify-content: center;
-    margin: 14px auto;
-    width: fit-content;
-}
-
-.map-cell {
-    height: 30px;
-    border-radius: 5px;
-    color: #fff;
-    font-weight: bold;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.map-cell-prize  { background: #2e7d32; }
-.map-cell-punish { background: #c62828; }
-
-/* ── Feature key (instructions) ─────────────────────────────────────────── */
-
-.feature-key {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 12px;
-    margin: 14px 0;
-}
-
-.key-card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 8px 10px 6px;
-    text-align: center;
-    background: #fafafa;
-}
-
-.key-title {
-    font-weight: bold;
-    font-size: 15px;
-    margin-bottom: 6px;
-}
-
-.key-pair {
-    display: flex;
-    gap: 12px;
-    align-items: flex-end;
-}
-
-.key-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-.key-curtain {
-    position: relative;
-    width: 56px;
-    height: 84px;
-}
-
-.key-caption {
-    font-size: 13px;
-    margin-top: 4px;
-    white-space: nowrap;
-}
-
-/* Small grid diagram for top/bottom and left/right */
-.mini-map {
-    display: grid;
-    grid-template-columns: repeat(var(--map-cols, 4), 9px);
-    gap: 2px;
-    padding: 4px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background: #fff;
-}
-
-.mini-cell {
-    width: 9px;
-    height: 13px;
-    border-radius: 2px;
-    background: #e0e0e0;
-}
-
-.mini-on-A { background: var(--bracket-a); }
-.mini-on-B { background: var(--bracket-b); }
+.demo-slot { min-height: 60px; margin: 10px 0; }
 
 /* ── Questionnaires after each game ──────────────────────────────────────── */
 

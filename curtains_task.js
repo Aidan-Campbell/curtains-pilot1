@@ -14,26 +14,31 @@
  *     sliders. Demographics once at the end.
  *   - One running score and bonus across both games.
  *   - Because game time grows by the same amount per bit and 1+5 = 2+4,
- *     both conditions take the same total game time (~18.5 min at current pacing).
+ *     both conditions take the same total game time (~21 min at current pacing).
  *
  * SESSION FLOW
- *   Overview (two games, bonus) → Game 1 instructions → comprehension check →
- *   Game 1 practice → Game 1 (50 rounds) → Game 1 questionnaires →
- *   "New game" screen (new value map + key) → Game 2 practice →
- *   Game 2 (50 rounds) → Game 2 questionnaires → demographics → end screen.
+ *   Game 1 instructions (short screens with looping animations) →
+ *   comprehension check (2 questions) → Game 1 practice → Game 1 (50 rounds) →
+ *   Game 1 questionnaires → Game 2 intro (new points + animation) →
+ *   Game 2 practice → Game 2 (50 rounds) → Game 2 questionnaires →
+ *   demographics → end screen.
  *
- * HOW A ROUND WORKS (unchanged from v3)
+ * HOW A ROUND WORKS (revised after DM's feedback, Nov 2026)
  *   Curtains sit in a fixed grid with values in ascending order (top left
- *   lowest, then left to right and top to bottom). The participant presses
- *   Start; the game removes curtains one bit at a time in a random order:
- *   both groups are outlined and flash, the removed group's outline goes, a
- *   red X marks its curtains and they open to show their values. The last
- *   curtain's value is added to the score.
+ *   lowest, then left to right and top to bottom). The Start screen shows an
+ *   empty board and the scoreboard. After Start, the points are shown
+ *   uncovered for 1 s, the curtains fly in over them, and the game removes
+ *   curtains one bit at a time in a random order: both groups are outlined
+ *   and flash, the removed group's outline goes, a red X marks its curtains
+ *   and they fade away, leaving their points dimmed. The last curtain fades
+ *   to show its points, which fly up to the scoreboard; the score reels roll
+ *   to the new total.
  *
  * DATA FOR ANALYSIS
- *   - phase 'reveal' = ONE ROW PER ROUND: outcome (points), start_rt (ms to
- *     click Start), prev_outcome / prev_was_win (previous scored round in the
- *     same game), game, n_bits, round_type, cumulative_score, bonus, removal
+ *   - phase 'reveal' = ONE ROW PER ROUND: outcome (points), start_rt (ms from
+ *     the Start screen appearing to the Start click; the preview comes after),
+ *     prev_outcome / prev_was_win (previous scored round in the same game),
+ *     game, n_bits, round_type, cumulative_score, bonus, preview_ms, removal
  *     order and steps, and the Start click (click_x/y on screen,
  *     click_button_x/y within the button, click_trusted, click_keyboard,
  *     click_pointer).
@@ -94,13 +99,21 @@ const curtainsTask = (function () {
         bonusCapSubunits: 250,         // £2.50
 
         // ── Pacing (identical per bit at every level) ──
-        revealLeadIn_ms: 400,          // after Start, before the first brackets
+        // After Start: points shown → curtains fly in → removals → last curtain.
+        preview_ms: 1000,              // points shown uncovered before the curtains move
+        flyIn_ms: 500,                 // must match the cover-fly-in CSS keyframe
+        revealLeadIn_ms: 400,          // curtains in place, before the first brackets
         bracketFlash_ms: 900,          // both brackets flashing
-        markRemoved_ms: 400,           // red X on the removed group, before its curtains open
-        removeFlip_ms: 500,            // must match the curtain-flip-open CSS keyframe
+        markRemoved_ms: 400,           // red X on the removed group, before its curtains fade
+        removeFade_ms: 500,            // must match the .cover opacity transition in the CSS
         stepGap_ms: 400,               // pause before the next bit's brackets
-        finalLeadIn_ms: 500,           // after the last removal, before the survivor opens
-        finalHold_ms: 2500,            // fully revealed round stays on screen
+        finalLeadIn_ms: 500,           // after the last removal, before the last curtain fades
+        finalHold_ms: 2500,            // round stays on screen; the score update plays inside it:
+        floatDelay_ms: 200,            //   last card highlighted, then
+        float_ms: 700,                 //   its points fly up to the scoreboard, then
+        reelSpin_ms: 600,              //   the score reels roll (leftmost reel stops first,
+        reelStagger_ms: 120,           //   each later reel this much later; all done in < 1 s)
+        demoFinalLeadIn_ms: 700,       // instructions only: pause before the last curtain fades
 
         // ── Dimensions ──
         dimensionsByBits: {
@@ -114,8 +127,6 @@ const curtainsTask = (function () {
 
         // ── Display ──
         showRemovalX: true,
-        openRemovedGroups: true,
-        showValueLabels: false,
         defaultColor: 'green',
 
         // ── Questionnaires after each game ──
@@ -206,8 +217,7 @@ const curtainsTask = (function () {
 
     const ASSET_FILES = [
         'feature_purple.png', 'feature_green.png',
-        'curtain_open_purple.png', 'curtain_open_green.png',
-        ...OVERLAYS.flatMap(o => [`${o.asset}.png`, `${o.asset}_open.png`]),
+        ...OVERLAYS.map(o => `${o.asset}.png`),
     ];
 
 
@@ -299,6 +309,9 @@ const curtainsTask = (function () {
         };
     };
 
+    const START_SPACER_HTML = `<div aria-hidden="true"><div style="display: inline-block; margin: 0px 8px">
+        <button class="jspsych-btn" tabindex="-1" style="visibility: hidden">Start</button></div></div>`;
+
     const REMOVAL_X_HTML = `<svg class="remove-x" viewBox="0 0 100 100" aria-hidden="true">
         <line x1="18" y1="18" x2="82" y2="82"/><line x1="82" y1="18" x2="18" y2="82"/></svg>`;
 
@@ -356,84 +369,41 @@ const curtainsTask = (function () {
     /*
      * =========================================================================
      *   5. RENDERING (all per game)
+     *
+     *   Each grid cell holds a value card (the points) with a curtain cover on
+     *   top. The grid's classes set the board state:
+     *     values-hidden  empty slots, no numbers (Start screen)
+     *     (none)         numbers showing, no curtains (preview)
+     *     covered        curtains over every card ('fly' plays the fly-in)
+     *   Cell classes during a round: gone (curtain faded out), removed (card
+     *   dimmed under a red X), final (last card, highlighted).
      * =========================================================================
      */
-    const curtainLayerHTML = (curtain, state) => {
+    const coverHTML = (curtain) => {
         const path = S.assetPath;
-        const suffix = (state === 'open') ? '_open' : '';
-        const overlayHTML = OVERLAYS
+        const overlays = OVERLAYS
             .filter(o => curtain.features[o.dim] === o.on)
-            .map(o => `<img class="curtain-layer" src="${path}${o.asset}${suffix}.png" alt="">`)
+            .map(o => `<img class="curtain-layer" src="${path}${o.asset}.png" alt="">`)
             .join('');
-        const labelHTML = (S.showValueLabels && curtain.value !== undefined)
-            ? `<span class="curtain-label">${formatPoints(curtain.value)}</span>` : '';
-
-        if (state === 'open') {
-            const valueClass = curtain.value > 0 ? 'curtain-value-prize' : 'curtain-value-punish';
-            return `<img class="curtain-layer" src="${path}curtain_open_${curtain.features.color}.png" alt="">`
-                + overlayHTML
-                + `<span class="curtain-value ${valueClass}">${formatPoints(curtain.value)}</span>`
-                + labelHTML;
-        }
-        return `<img class="curtain-layer" src="${path}feature_${curtain.features.color}.png" alt="">`
-            + overlayHTML + labelHTML;
+        return `<div class="cover"><img class="curtain-layer" src="${path}feature_${curtain.features.color}.png" alt="">${overlays}</div>`;
     };
 
-    const renderStageHTML = (game, roundLabel, scoreLabel) => {
-        const curtainsHTML = game.curtains.map(c =>
-            `<div class="curtain" data-curtain-id="${c.id}">${curtainLayerHTML(c, 'closed')}</div>`).join('');
-        return `<div class="round-header">${roundLabel}</div>
-            <div class="score-display">${scoreLabel}</div>
-            <div class="curtain-stage">
-                <div class="curtain-grid" style="--curtain-cols: ${game.shape.cols}">${curtainsHTML}</div>
+    const cellHTML = (c, cls = '', extra = '') => `
+        <div class="curtain ${cls}" data-curtain-id="${c.id}">
+            <div class="value-card ${c.value > 0 ? 'value-prize' : 'value-punish'}"><span class="value-num">${formatPoints(c.value)}</span></div>
+            ${coverHTML(c)}${extra}
+        </div>`;
+
+    // state: 'empty' | 'values' | 'covered'. cellClass / cellExtra let a demo
+    // draw the board part-way through a round without playing any transitions.
+    const boardHTML = (game, { state = 'empty', cellClass = () => '', cellExtra = () => '' } = {}) => {
+        const gridCls = { empty: 'values-hidden', values: '', covered: 'covered' }[state];
+        const cells = game.curtains.map(c => cellHTML(c, cellClass(c), cellExtra(c))).join('');
+        return `<div class="curtain-stage">
+                <div class="curtain-grid ${gridCls}" style="--curtain-cols: ${game.shape.cols}">${cells}</div>
                 <div class="bracket-layer"></div>
             </div>`;
     };
-
-    const renderValueMapHTML = (game) => {
-        const cells = game.curtains.map((c) => {
-            const cls = c.value > 0 ? 'map-cell-prize' : 'map-cell-punish';
-            return `<div class="map-cell ${cls}">${formatPoints(c.value)}</div>`;
-        }).join('');
-        return `<div class="value-map" style="--map-cols: ${game.shape.cols}">${cells}</div>`;
-    };
-
-    const miniMapHTML = (game, dimId, side) => {
-        const cells = game.curtains.map(c =>
-            `<div class="mini-cell${c.sides[dimId] === side ? ` mini-on-${side}` : ''}"></div>`).join('');
-        return `<div class="mini-map" style="--map-cols: ${game.shape.cols}">${cells}</div>`;
-    };
-    const keyCurtainHTML = (features) =>
-        `<div class="key-curtain">${curtainLayerHTML({ features }, 'closed')}</div>`;
-
-    const renderFeatureKeyHTML = (game) => {
-        const cards = game.dims.map((d, i) => {
-            let a, b;
-            if (d.kind === 'spatial') {
-                a = miniMapHTML(game, d.id, 'A'); b = miniMapHTML(game, d.id, 'B');
-            } else if (d.id === 'color') {
-                a = keyCurtainHTML({ color: d.valueA }); b = keyCurtainHTML({ color: d.valueB });
-            } else {
-                a = keyCurtainHTML({ color: S.defaultColor, [d.id]: d.valueA });
-                b = keyCurtainHTML({ color: S.defaultColor, [d.id]: d.valueB });
-            }
-            return `<div class="key-card">
-                <div class="key-title">${S.randomizeRemovalOrder ? '' : `${i + 1}. `}${d.name}</div>
-                <div class="key-pair">
-                    <div class="key-item">${a}<div class="key-caption">${d.labelA}</div></div>
-                    <div class="key-item">${b}<div class="key-caption">${d.labelB}</div></div>
-                </div>
-            </div>`;
-        }).join('');
-        return `<div class="feature-key">${cards}</div>`;
-    };
-
-    const keyIntroText = (game) => (game.bits === 1)
-        ? 'The curtains are split by color:'
-        : (S.randomizeRemovalOrder
-            ? `The curtains are split in these ${game.bits} ways, one at a time. The order is random and
-               changes every round:`
-            : 'The curtains are split in this order:');
 
 
     /*
@@ -468,13 +438,13 @@ const curtainsTask = (function () {
         return rects;
     };
 
-    const drawBrackets = (displayEl, game, group, side) => {
-        const stage = displayEl.querySelector('.curtain-stage');
-        const layer = displayEl.querySelector('.bracket-layer');
+    const drawBrackets = (rootEl, game, group, side) => {
+        const stage = rootEl.querySelector('.curtain-stage');
+        const layer = rootEl.querySelector('.bracket-layer');
         const stageBox = stage.getBoundingClientRect();
         const cellBox = (r, c) => {
             const cur = game.curtains.find(x => x.row === r && x.col === c);
-            return displayEl.querySelector(`[data-curtain-id="${cur.id}"]`).getBoundingClientRect();
+            return rootEl.querySelector(`[data-curtain-id="${cur.id}"]`).getBoundingClientRect();
         };
         const pad = 4;
         return groupRects(group).map(({ r0, r1, c0, c1 }) => {
@@ -493,7 +463,7 @@ const curtainsTask = (function () {
 
     /*
      * =========================================================================
-     *   7. SCORE (one running total across both games)
+     *   7. SCORE AND SCOREBOARD (one running total across both games)
      * =========================================================================
      */
     let totalScore = 0;
@@ -518,26 +488,103 @@ const curtainsTask = (function () {
             clicks_keyboard: startClicks.filter(c => c.keyboard).length,
         };
     };
-    const scoreLabelHTML = (isPractice, score = totalScore) => isPractice
-        ? `Practice round: points don't count`
-        : `Score: ${formatPoints(score)} points &nbsp;·&nbsp; Bonus: ${formatMoney(bonusSubunits(score))}`;
+
+    // Scoreboard: a sign and four digit reels. Each reel is a strip of the
+    // digits 0–9 three times over; rolling moves the strip at least one full
+    // turn, then snaps back to the first copy of the digit.
+    const N_REELS = 4;
+    const reelTransform = (pos) => `translateY(calc(${-pos} * var(--reel-h)))`;
+    const meterParts = (score) => {
+        const abs = Math.min(Math.abs(score), Math.pow(10, N_REELS) - 1);
+        const nSig = String(abs).length;
+        const digits = String(abs).padStart(N_REELS, '0').split('').map(Number);
+        return {
+            sign: score > 0 ? '+' : (score < 0 ? '−' : ''),
+            digits,
+            lead: digits.map((_, i) => i < N_REELS - nSig),   // leading zeros are drawn faint
+        };
+    };
+    const reelStrip = Array.from({ length: 30 }, (_, i) => `<span>${i % 10}</span>`).join('');
+
+    const scoreboardHTML = ({ score, label = 'Score', showBonus = true, practice = false }) => {
+        const p = meterParts(score);
+        const reels = p.digits.map((d, i) =>
+            `<span class="reel${p.lead[i] ? ' lead' : ''}" data-pos="${d}"><span class="reel-strip" style="transform: ${reelTransform(d)}">${reelStrip}</span></span>`).join('');
+        return `<div class="scoreboard${practice ? ' sb-practice' : ''}">
+                <div class="sb-label">${label}</div>
+                <div class="sb-meter"><span class="sb-sign">${p.sign}</span>${reels}</div>
+                ${showBonus ? `<div class="sb-bonus">Bonus <b>${formatMoney(bonusSubunits(score))}</b></div>` : ''}
+            </div>`;
+    };
+
+    const rollScoreboard = (sb, to, timers) => {
+        const p = meterParts(to);
+        let longest = 0;
+        sb.querySelectorAll('.reel').forEach((reel, i) => {
+            const strip = reel.firstElementChild;
+            const cur = Number(reel.dataset.pos);
+            const d = p.digits[i];
+            reel.classList.toggle('lead', p.lead[i]);
+            if (cur === d) return;
+            const target = cur + ((d - cur + 10) % 10) + 10;        // one full turn plus the difference
+            const dur = S.reelSpin_ms + i * S.reelStagger_ms;       // reels stop left to right
+            longest = Math.max(longest, dur);
+            strip.style.transition = `transform ${dur}ms cubic-bezier(.15,.6,.25,1)`;
+            strip.style.transform = reelTransform(target);
+            reel.dataset.pos = d;
+            timers.after(dur + 30, () => {
+                strip.style.transition = 'none';
+                strip.style.transform = reelTransform(d);
+            });
+        });
+        sb.querySelector('.sb-sign').textContent = p.sign;
+        sb.classList.remove('sb-bump'); void sb.offsetWidth; sb.classList.add('sb-bump');
+        const bonusEl = sb.querySelector('.sb-bonus b');
+        if (bonusEl) timers.after(longest, () => { bonusEl.textContent = formatMoney(bonusSubunits(to)); });
+    };
+
+    // The won/lost points fly from the last card up to the scoreboard.
+    const floatPoints = (rootEl, fromEl, value, fadeOut) => {
+        const wrap = rootEl.querySelector('.cg-wrap');
+        const target = rootEl.querySelector('.sb-meter');
+        if (!wrap || !target || !fromEl) return;
+        const w = wrap.getBoundingClientRect(), a = fromEl.getBoundingClientRect(), b = target.getBoundingClientRect();
+        const el = document.createElement('div');
+        el.className = `score-float ${value > 0 ? 'float-prize' : 'float-punish'}`;
+        el.textContent = formatPoints(value);
+        el.style.left = `${a.left + a.width / 2 - w.left}px`;
+        el.style.top = `${a.top + a.height / 2 - w.top}px`;
+        wrap.appendChild(el);
+        const dx = (b.left + b.width / 2) - (a.left + a.width / 2);
+        const dy = (b.top + b.height / 2) - (a.top + a.height / 2);
+        if (!el.animate) { el.remove(); return; }
+        const anim = el.animate([
+            { transform: 'translate(-50%, -50%) scale(0.6)', opacity: 0 },
+            { transform: 'translate(-50%, -50%) scale(1.25)', opacity: 1, offset: 0.2 },
+            { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.7)`, opacity: fadeOut ? 0 : 0.9 },
+        ], { duration: S.float_ms, easing: 'ease-in', fill: 'forwards' });
+        anim.onfinish = () => el.remove();
+    };
+
+    // Timers that can all be cancelled at once (used by instruction demos).
+    const makeTimers = () => {
+        const ids = new Set();
+        return {
+            after: (ms, fn) => { const id = setTimeout(() => { ids.delete(id); fn(); }, ms); ids.add(id); return id; },
+            clear: () => { ids.forEach(clearTimeout); ids.clear(); },
+        };
+    };
 
 
     /*
      * =========================================================================
-     *   8. MakeCurtainsRound — Start screen + random removal reveal
+     *   8. ONE ROUND: plan, schedule, animation
      * =========================================================================
      */
-    function MakeCurtainsRound(game, roundNum, isPractice) {
-        const nPractice = S.nPracticeRounds[game.index - 1] || 0;
-        const roundLabel = isPractice
-            ? `Game ${game.index} · Practice round ${roundNum} of ${nPractice}`
-            : `Game ${game.index} · Round ${roundNum} of ${S.nRoundsPerGame}`;
-        const roundType = isPractice ? 'practice' : 'main';
-
+    // Which curtain survives and which groups go at each step.
+    const makePlan = (game) => {
         const survivor = game.curtains[Math.floor(Math.random() * game.curtains.length)];
         const removalOrder = S.randomizeRemovalOrder ? shuffle(game.dims) : game.dims.slice();
-
         const steps = [];
         let remaining = game.curtains.slice();
         removalOrder.forEach((d) => {
@@ -548,21 +595,117 @@ const curtainsTask = (function () {
             steps.push({ dim: d, keptSide, groupA, groupB, removed });
             remaining = keptSide === 'A' ? groupA : groupB;
         });
+        return { survivor, removalOrder, steps };
+    };
 
-        const schedule = () => {
-            let t = S.revealLeadIn_ms;
-            const events = [];
-            const markTime = S.showRemovalX ? S.markRemoved_ms : 0;
-            steps.forEach((st, i) => {
-                events.push({ time: t, type: 'brackets', step: i });
-                events.push({ time: t + S.bracketFlash_ms, type: 'mark', step: i });
-                events.push({ time: t + S.bracketFlash_ms + markTime, type: 'open', step: i });
-                t += S.bracketFlash_ms + markTime + S.removeFlip_ms + S.stepGap_ms;
+    // Event times from the moment Start is clicked. Every bit adds the same
+    // time, and the preview, fly-in and end-of-round parts are the same at
+    // every level.
+    const roundSchedule = (plan) => {
+        const events = [{ time: 0, type: 'values' }, { time: S.preview_ms, type: 'cover' }];
+        const markTime = S.showRemovalX ? S.markRemoved_ms : 0;
+        let t = S.preview_ms + S.flyIn_ms + S.revealLeadIn_ms;
+        plan.steps.forEach((st, i) => {
+            events.push({ time: t, type: 'brackets', step: i });
+            events.push({ time: t + S.bracketFlash_ms, type: 'mark', step: i });
+            events.push({ time: t + S.bracketFlash_ms + markTime, type: 'remove', step: i });
+            t += S.bracketFlash_ms + markTime + S.removeFade_ms + S.stepGap_ms;
+        });
+        const finalTime = t - S.stepGap_ms + S.finalLeadIn_ms;
+        const floatTime = finalTime + S.removeFade_ms + S.floatDelay_ms;
+        events.push({ time: finalTime, type: 'final' });
+        events.push({ time: floatTime, type: 'float' });
+        events.push({ time: floatTime + S.float_ms, type: 'roll' });
+        return { events, finalTime, total: finalTime + S.removeFade_ms + S.finalHold_ms };
+    };
+
+    // Plays a round inside rootEl (which holds one board, and optionally a
+    // scoreboard inside a .cg-wrap). opts.fromFinal skips straight to the end
+    // of the round (instruction demo). opts.scoreTo = null: the scoreboard
+    // doesn't change (practice rounds, demos without a score).
+    const animateRound = (rootEl, game, plan, timers, opts = {}) => {
+        const { scoreTo = null, fromFinal = false, practice = false } = opts;
+        const grid = rootEl.querySelector('.curtain-grid');
+        const elFor = (c) => rootEl.querySelector(`[data-curtain-id="${c.id}"]`);
+        let live = [];
+        const sched = roundSchedule(plan);
+        const shift = fromFinal ? sched.finalTime - S.demoFinalLeadIn_ms : 0;
+
+        sched.events.filter(ev => ev.time >= shift).forEach((ev) => {
+            timers.after(ev.time - shift, () => {
+                if (ev.type === 'values') {
+                    grid.classList.remove('values-hidden');
+                } else if (ev.type === 'cover') {
+                    grid.classList.add('covered', 'fly');
+                } else if (ev.type === 'brackets') {
+                    live.forEach(b => b.el.remove());
+                    const st = plan.steps[ev.step];
+                    live = [
+                        ...drawBrackets(rootEl, game, st.groupA, 'a').map(el => ({ el, side: 'A' })),
+                        ...drawBrackets(rootEl, game, st.groupB, 'b').map(el => ({ el, side: 'B' })),
+                    ];
+                } else if (ev.type === 'mark') {
+                    const st = plan.steps[ev.step];
+                    live.forEach((b) => {
+                        if (b.side === st.keptSide) b.el.classList.remove('bracket-flash');
+                        else b.el.remove();
+                    });
+                    live = live.filter(b => b.side === st.keptSide);
+                    if (S.showRemovalX) st.removed.forEach(c => elFor(c).insertAdjacentHTML('beforeend', REMOVAL_X_HTML));
+                } else if (ev.type === 'remove') {
+                    plan.steps[ev.step].removed.forEach(c => elFor(c).classList.add('gone', 'removed'));
+                } else if (ev.type === 'final') {
+                    live.forEach(b => b.el.remove());
+                    live = [];
+                    elFor(plan.survivor).classList.add('gone', 'final');
+                } else if (ev.type === 'float') {
+                    floatPoints(rootEl, elFor(plan.survivor).querySelector('.value-card'), plan.survivor.value, practice || scoreTo === null);
+                } else if (ev.type === 'roll') {
+                    const sb = rootEl.querySelector('.scoreboard');
+                    if (sb && scoreTo !== null) rollScoreboard(sb, scoreTo, timers);
+                }
             });
-            const finalTime = t - S.stepGap_ms + S.finalLeadIn_ms;
-            events.push({ time: finalTime, type: 'final' });
-            return { events, total: finalTime + S.removeFlip_ms + S.finalHold_ms };
-        };
+        });
+        return sched.total - shift;
+    };
+
+    // The board as it stands just before the last curtain goes (instruction demo).
+    const endStateBoardHTML = (game, plan) => {
+        const removed = new Set(plan.steps.flatMap(st => st.removed.map(c => c.id)));
+        return boardHTML(game, {
+            state: 'covered',
+            cellClass: c => (removed.has(c.id) ? 'gone removed' : ''),
+            cellExtra: c => (removed.has(c.id) && S.showRemovalX ? REMOVAL_X_HTML : ''),
+        });
+    };
+
+
+    /*
+     * =========================================================================
+     *   9. MakeCurtainsRound — Start screen + preview + random removal reveal
+     * =========================================================================
+     */
+    function MakeCurtainsRound(game, roundNum, isPractice) {
+        const nPractice = S.nPracticeRounds[game.index - 1] || 0;
+        const roundLabel = isPractice
+            ? `Game ${game.index} · Practice round ${roundNum} of ${nPractice}`
+            : `Game ${game.index} · Round ${roundNum} of ${S.nRoundsPerGame}`;
+        const roundType = isPractice ? 'practice' : 'main';
+
+        const plan = makePlan(game);
+        const { survivor, removalOrder, steps } = plan;
+
+        // Start screen and the first frame of the reveal look the same: the
+        // scoreboard and an empty board.
+        const screenHTML = () => `<div class="cg-wrap">
+                <div class="round-header">${roundLabel}</div>
+                ${scoreboardHTML({
+                    score: totalScore,
+                    label: isPractice ? "Practice round: points don't count" : 'Score',
+                    practice: isPractice,
+                })}
+                ${boardHTML(game, { state: 'empty' })}
+            </div>`;
 
         const baseData = {
             task: 'curtains', round_type: roundType, round: roundNum,
@@ -573,10 +716,11 @@ const curtainsTask = (function () {
         let startRT = null;
         let click = null;
         let clickListener = null;
+        let timers = null;
 
         const startTrial = {
             type: jsPsychHtmlButtonResponse,
-            stimulus: () => renderStageHTML(game, roundLabel, scoreLabelHTML(isPractice)),
+            stimulus: screenHTML,
             choices: ['Start'],
             data: { ...baseData, phase: 'start' },   // rt = round-start latency
             on_load: () => {
@@ -617,59 +761,23 @@ const curtainsTask = (function () {
             },
         };
 
+        // The reveal screen keeps an invisible copy of the Start button, so the
+        // board doesn't jump when Start is clicked.
         const revealTrial = {
             type: jsPsychHtmlKeyboardResponse,
-            stimulus: () => renderStageHTML(game, roundLabel, scoreLabelHTML(isPractice)),
+            stimulus: () => screenHTML() + START_SPACER_HTML,
             choices: 'NO_KEYS',
-            trial_duration: () => schedule().total,
+            trial_duration: () => roundSchedule(plan).total,
             data: { ...baseData, phase: 'reveal' },
             on_load: () => {
-                const displayEl = jsPsych.getDisplayElement();
-                const elFor = (c) => displayEl.querySelector(`[data-curtain-id="${c.id}"]`);
-                let live = [];
-
-                schedule().events.forEach((ev) => {
-                    setTimeout(() => {
-                        if (ev.type === 'brackets') {
-                            live.forEach(b => b.el.remove());
-                            const st = steps[ev.step];
-                            live = [
-                                ...drawBrackets(displayEl, game, st.groupA, 'a').map(el => ({ el, side: 'A' })),
-                                ...drawBrackets(displayEl, game, st.groupB, 'b').map(el => ({ el, side: 'B' })),
-                            ];
-                        } else if (ev.type === 'mark') {
-                            const st = steps[ev.step];
-                            live.forEach((b) => {
-                                if (b.side === st.keptSide) b.el.classList.remove('bracket-flash');
-                                else b.el.remove();
-                            });
-                            live = live.filter(b => b.side === st.keptSide);
-                            if (S.showRemovalX) {
-                                st.removed.forEach(c => elFor(c).insertAdjacentHTML('beforeend', REMOVAL_X_HTML));
-                            }
-                        } else if (ev.type === 'open') {
-                            steps[ev.step].removed.forEach((c) => {
-                                const el = elFor(c);
-                                if (S.openRemovedGroups) {
-                                    el.innerHTML = curtainLayerHTML(c, 'open') + (S.showRemovalX ? REMOVAL_X_HTML : '');
-                                    el.classList.add('curtain-open', 'curtain-removed');
-                                } else {
-                                    el.classList.add('curtain-eliminated');
-                                }
-                            });
-                        } else if (ev.type === 'final') {
-                            live.forEach(b => b.el.remove());
-                            live = [];
-                            const el = elFor(survivor);
-                            el.innerHTML = curtainLayerHTML(survivor, 'open');
-                            el.classList.add('curtain-open', 'curtain-final');
-                            const scoreEl = displayEl.querySelector('.score-display');
-                            if (scoreEl && !isPractice) scoreEl.innerHTML = scoreLabelHTML(false, totalScore + survivor.value);
-                        }
-                    }, ev.time);
+                timers = makeTimers();
+                animateRound(jsPsych.getDisplayElement(), game, plan, timers, {
+                    scoreTo: isPractice ? null : totalScore + survivor.value,
+                    practice: isPractice,
                 });
             },
             on_finish: (data) => {
+                if (timers) timers.clear();
                 if (!isPractice) totalScore += survivor.value;
 
                 // ONE ROW PER ROUND: this reveal row carries the round's outcome, the
@@ -692,7 +800,8 @@ const curtainsTask = (function () {
                 data.outcome = survivor.value;
                 data.cumulative_score = isPractice ? null : totalScore;
                 data.bonus_subunits = isPractice ? null : bonusSubunits(totalScore);
-                data.reveal_duration_ms = schedule().total;
+                data.reveal_duration_ms = roundSchedule(plan).total;
+                data.preview_ms = S.preview_ms;
                 data.removal_order = JSON.stringify(removalOrder.map(d => d.id));
                 data.removal_steps = JSON.stringify(steps.map(st => ({
                     dim: st.dim.id,
@@ -709,78 +818,129 @@ const curtainsTask = (function () {
 
     /*
      * =========================================================================
-     *   9. INSTRUCTIONS
+     *   10. INSTRUCTIONS
+     *
+     *   One idea per screen; looping animations show how a round works, so
+     *   the text stays short. A demo is a <div data-demo="..." data-game="1|2">
+     *   in a page; demos start whenever a page is shown and stop when it
+     *   changes.
+     *     cover  points shown, then covered by curtains
+     *     round  a whole round, from the points to the last curtain
+     *     score  last curtain goes, its points fly to a scoreboard
      * =========================================================================
      */
-    const nStepsText = (game) => (game.bits === 1 ? 'one step' : `${game.bits} steps`);
-
-    const howRoundWorksHTML = (game) => `
-        <p>Each round starts when you press <b>Start</b>. The game then removes curtains in
-        ${nStepsText(game)}.</p>
-        <p>At each step, the curtains still in play are split into two groups, outlined in
-        <span class="txt-a">orange</span> and <span class="txt-b">blue</span>. After a moment,
-        one group is removed at random: its outline disappears, a red ✕ marks its curtains,
-        and they open to show their points.</p>
-        <p>${game.bits === 1 ? 'Then' : 'When only one curtain is left,'} your curtain opens and its
-        points are added to your score. You don't make any choices; every curtain is equally
-        likely to be the last one left.</p>`;
-
-    const valueMapPageHTML = (game) => `
-        <p>The points are always <b>in order</b>: the top-left curtain hides the lowest value, and
-        the values increase from left to right, then from top to bottom, up to the highest value
-        at the bottom right. In Game ${game.index} they are the same on every round:</p>
-        ${renderValueMapHTML(game)}
-        <p>So on any round of Game ${game.index} you could get anything from ${formatPoints(game.values[0])}
-        to ${formatPoints(game.values[game.values.length - 1])} points.</p>`;
-
-    // Overview + Game 1 instructions.
     const g1 = GAMES[0], g2 = GAMES[1];
     const nP1 = S.nPracticeRounds[0] || 0;
+    const nP2 = S.nPracticeRounds[1] || 0;
 
-    const game1Instructions = {
-        type: jsPsychInstructions,
-        pages: [
-            `<div class='parent'>
-                <p>In this study you'll play <b>two versions of a curtain game</b>, one after the other
-                (Game 1 and Game 2). They work the same way, but the number of curtains and the points
-                behind them are different.</p>
-                <p>After each game, you'll answer a few short questions about it.</p>
-                <p>You'll earn a bonus from both games together. It starts at
-                <b>${formatMoney(S.endowmentSubunits)}</b>, and your points are turned into money:
-                <b>${pointRateText()}</b>. Prizes add to your bonus and penalties subtract from it.
-                Your bonus is rounded up to the next whole penny, and stays between
-                ${formatMoney(S.bonusFloorSubunits)} and ${formatMoney(S.bonusCapSubunits)}.</p>
-            </div>`,
-            `<div class='parent'>
-                <p><b>Game 1.</b> You'll see <b>${g1.nCurtains} curtains</b>. Behind each curtain is a
-                different number of points: some are prizes (+) and some are penalties (−).</p>
-                <p>On each round, the game removes curtains at random until only one is left.
-                Its points are added to your score.</p>
-            </div>`,
-            `<div class='parent'>${valueMapPageHTML(g1)}</div>`,
-            `<div class='parent'>${howRoundWorksHTML(g1)}</div>`,
-            `<div class='parent'><p>${keyIntroText(g1)}</p>${renderFeatureKeyHTML(g1)}</div>`,
-            `<div class='parent'>
-                <p>Game 1 has ${nP1 > 0 ? `${nP1} practice round${nP1 > 1 ? 's' : ''} that
-                ${nP1 > 1 ? "don't" : "doesn't"} count, then ` : ''}${S.nRoundsPerGame} rounds that do.</p>
-                ${S.includeComprehensionCheck ? `<p>First, a few quick questions to check the rules are clear.</p>` : ''}
-            </div>`,
-        ],
-        show_clickable_nav: true,
-        data: { task: 'curtains', phase: 'instructions', game: 1 },
+    const staticBoardHTML = (game) => `<div class="cg-wrap demo-size">${boardHTML(game, { state: 'values' })}</div>`;
+    const demoHTML = (kind, game) => `<div class="demo-slot" data-demo="${kind}" data-game="${game.index}"></div>`;
+
+    let demoTimers = makeTimers();
+    let demoScore = 0;
+
+    const runDemo = (slot) => {
+        const game = GAMES[Number(slot.dataset.game) - 1];
+        const kind = slot.dataset.demo;
+        const loop = () => {
+            if (!slot.isConnected) return;
+            if (kind === 'cover') {
+                slot.innerHTML = `<div class="cg-wrap demo-size">${boardHTML(game, { state: 'empty' })}</div>`;
+                const grid = slot.querySelector('.curtain-grid');
+                demoTimers.after(400, () => grid.classList.remove('values-hidden'));
+                demoTimers.after(400 + S.preview_ms, () => grid.classList.add('covered', 'fly'));
+                demoTimers.after(400 + S.preview_ms + S.flyIn_ms + 1600, loop);
+            } else if (kind === 'round') {
+                slot.innerHTML = `<div class="cg-wrap demo-size">${boardHTML(game, { state: 'empty' })}</div>`;
+                const total = animateRound(slot, game, makePlan(game), demoTimers, {});
+                demoTimers.after(total + 400, loop);
+            } else if (kind === 'score') {
+                const plan = makePlan(game);
+                slot.innerHTML = `<div class="cg-wrap demo-size">
+                        ${scoreboardHTML({ score: demoScore, showBonus: false })}
+                        ${endStateBoardHTML(game, plan)}
+                    </div>`;
+                demoScore += plan.survivor.value;
+                const total = animateRound(slot, game, plan, demoTimers, { scoreTo: demoScore, fromFinal: true });
+                demoTimers.after(total + 300, loop);
+            }
+        };
+        loop();
     };
+
+    // jsPsychInstructions redraws the page on Back/Next; watch for that.
+    let demoObserver = null;
+    const startDemos = () => {
+        demoTimers.clear();
+        jsPsych.getDisplayElement().querySelectorAll('.demo-slot').forEach(runDemo);
+    };
+    const demoInstructions = (pages, data) => ({
+        type: jsPsychInstructions,
+        pages,
+        show_clickable_nav: true,
+        data,
+        on_load: () => {
+            demoScore = 0;
+            startDemos();
+            demoObserver = new MutationObserver(startDemos);
+            demoObserver.observe(jsPsych.getDisplayElement(), { childList: true });
+        },
+        on_finish: () => {
+            if (demoObserver) demoObserver.disconnect();
+            demoTimers.clear();
+        },
+    });
+
+    const bonusRuleText = () => {
+        const per = S.subunitsPerPoint < 1 ? Math.round(1 / S.subunitsPerPoint) : null;
+        return per
+            ? `Every ${per} points you win add 1${S.subunitName} to it, and every ${per} points you lose take 1${S.subunitName} away.`
+            : `Each point you win adds ${S.subunitsPerPoint}${S.subunitName} to it, and each point you lose takes ${S.subunitsPerPoint}${S.subunitName} away.`;
+    };
+    const roundsText = (n) => `${n} round${n === 1 ? '' : 's'}`;
+    const practiceText = (n, gameIndex) => (n > 0
+        ? `Game ${gameIndex} starts with ${n === 1 ? '1 practice round that doesn\'t' : `${n} practice rounds that don't`} count, then ${roundsText(S.nRoundsPerGame)} that ${S.nRoundsPerGame === 1 ? 'does' : 'do'}.`
+        : `Game ${gameIndex} has ${roundsText(S.nRoundsPerGame)}.`);
+
+    const game1Instructions = demoInstructions([
+        `<div class='parent'>
+            <p>In this study you'll play a game called the <b>Curtain Game</b>.</p>
+            <p>In the game, you'll see points arranged on the screen, like this:</p>
+            ${staticBoardHTML(g1)}
+            <p>Each round, you'll win or lose some of these points. To see how, continue to the next screen.</p>
+        </div>`,
+        `<div class='parent'>
+            <p>At the start of each round, you'll see the points for a moment. Then they're covered by curtains:</p>
+            ${demoHTML('cover', g1)}
+        </div>`,
+        `<div class='parent'>
+            <p>Then the curtains are removed at random until only one is left:</p>
+            ${demoHTML('round', g1)}
+            <p>You don't make any choices: every curtain is equally likely to be the last one left.</p>
+        </div>`,
+        `<div class='parent'>
+            <p>The points behind the last curtain are added to your score:</p>
+            ${demoHTML('score', g1)}
+        </div>`,
+        `<div class='parent'>
+            <p>Your points are turned into a <b>bonus payment</b>.</p>
+            <p>Your bonus starts at <b>${formatMoney(S.endowmentSubunits)}</b>. ${bonusRuleText()}</p>
+            <p>Your bonus is rounded up to the next penny, and stays between
+            ${formatMoney(S.bonusFloorSubunits)} and ${formatMoney(S.bonusCapSubunits)}.</p>
+        </div>`,
+        `<div class='parent'>
+            <p>You'll play the game twice: <b>Game 1</b> and <b>Game 2</b>. After each game, you'll answer
+            a few short questions about it.</p>
+            <p>${practiceText(nP1, 1)}</p>
+            ${S.includeComprehensionCheck ? `<p>First, two quick questions to check the rules are clear.</p>` : ''}
+        </div>`,
+    ], { task: 'curtains', phase: 'instructions', game: 1 });
 
     const COMPREHENSION_QUESTIONS = [
         {
-            id: 'value_order',
-            prompt: `Which curtain hides the <b>most</b> points?`,
-            choices: ['The top-left curtain', 'The bottom-right curtain', 'It changes every round'],
-            correct: 1,
-        },
-        {
             id: 'random_removal',
             prompt: `How are curtains removed?`,
-            choices: ['You choose which group to remove', 'The game removes one group at random', 'The group with the most points is always removed'],
+            choices: ['You choose which curtains to remove', 'The game removes them at random', 'The curtains with the most points are always removed'],
             correct: 1,
         },
         {
@@ -821,35 +981,23 @@ const curtainsTask = (function () {
             loop_function: () => !lastComprehensionPassed() }
         : { timeline: [game1Instructions] };
 
-    // "New game" screen before Game 2.
-    const nP2 = S.nPracticeRounds[1] || 0;
-    const newGameScreen = {
-        type: jsPsychInstructions,
-        pages: [
-            `<div class='parent'>
-                <p><b>Game 2: a new version of the game.</b></p>
-                <p>This time there are <b>${g2.nCurtains} curtains</b>, and the points behind them are
-                different from Game 1. Everything else works the same way, and your score and bonus
-                carry on from Game 1.</p>
-            </div>`,
-            `<div class='parent'>${valueMapPageHTML(g2)}</div>`,
-            `<div class='parent'>
-                <p>In Game 2 the curtains are removed in ${nStepsText(g2)}.</p>
-                <p>${keyIntroText(g2)}</p>${renderFeatureKeyHTML(g2)}
-            </div>`,
-            `<div class='parent'>
-                <p>Game 2 has ${nP2 > 0 ? `${nP2} practice round${nP2 > 1 ? 's' : ''} that
-                ${nP2 > 1 ? "don't" : "doesn't"} count, then ` : ''}${S.nRoundsPerGame} rounds that do.</p>
-            </div>`,
-        ],
-        show_clickable_nav: true,
-        data: { task: 'curtains', phase: 'instructions', game: 2 },
-    };
-
+    // Before Game 2: the new points and a round at the new size.
+    const newGameScreen = demoInstructions([
+        `<div class='parent'>
+            <p><b>Game 2</b> uses a different set of points:</p>
+            ${staticBoardHTML(g2)}
+            <p>Everything else works the same way, and your score and bonus carry over from Game 1.</p>
+        </div>`,
+        `<div class='parent'>
+            <p>Here's what a round of Game 2 looks like:</p>
+            ${demoHTML('round', g2)}
+        </div>`,
+        `<div class='parent'><p>${practiceText(nP2, 2)}</p></div>`,
+    ], { task: 'curtains', phase: 'instructions', game: 2 });
 
     /*
      * =========================================================================
-     *   10. QUESTIONNAIRES AFTER EACH GAME
+     *   11. QUESTIONNAIRES AFTER EACH GAME
      *       Flow (Melnikoff) → DQ-GEQ → enjoyment/motivation → Langer & Roth
      * =========================================================================
      */
@@ -1019,7 +1167,7 @@ const curtainsTask = (function () {
 
     /*
      * =========================================================================
-     *   11. FULL SESSION
+     *   12. FULL SESSION
      * =========================================================================
      */
     const practiceDone = (game) => ({
