@@ -151,12 +151,20 @@
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    border: 2px solid;
+    border: 2px solid transparent;
     border-radius: 10px;
     transition: opacity 0.5s ease, filter 0.5s ease;
 }
-.value-prize  { background: #e8f5e9; border-color: #43a047; color: #1b5e20; }
-.value-punish { background: #ffebee; border-color: #e53935; color: #b71c1c; }
+.value-prize  { background: #e2f1e4; color: #1b5e20; }
+.value-punish { background: #fce6e8; color: #b71c1c; }
+
+/* While a curtain is over a card, the card is hidden completely, so no colour
+   shows around the curtain's edges. It hides once the fly-in has finished
+   (delay = flyIn_ms) and reappears the moment its curtain starts to fade. */
+.covered .curtain:not(.gone) .value-card {
+    visibility: hidden;
+    transition: visibility 0s linear 0.5s;
+}
 .value-num {
     font-weight: 800;
     font-size: var(--value-fs);
